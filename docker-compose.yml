@@ -1,0 +1,19 @@
+services:
+  umbrella:
+    build: .
+    restart: unless-stopped
+    environment:
+      UMBRELLA_DASHBOARD_PORT: "4578"
+    ports:
+      - "4578:4578"
+    volumes:
+      - umbrella_data:/root/.umbrella
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4578/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  umbrella_data:

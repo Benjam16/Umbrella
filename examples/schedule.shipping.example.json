@@ -1,0 +1,4 @@
+{
+  "intervalMs": 21600000,
+  "goal": "Shipping watch (read-only): If UMBRELLA_SHIPPING_ROOT is set, list that directory; otherwise skip. Do not run npm publish, git push, or modify git remotes. If you find a README in a child repo mentioning TODO, append one line to ~/.umbrella/memory via the normal learn path or log a short note in the next heartbeat summary only. No new repos without explicit human instruction."
+}

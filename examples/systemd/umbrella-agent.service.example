@@ -1,0 +1,26 @@
+# Example systemd unit — copy to:
+#   /etc/systemd/system/umbrella-agent.service
+# or (user session):
+#   ~/.config/systemd/user/umbrella-agent.service
+#
+# Edit: User, WorkingDirectory, ExecStart paths, EnvironmentFile.
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now umbrella-agent
+# User install: systemctl --user enable --now umbrella-agent
+
+[Unit]
+Description=Umbrella autonomous agent daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User=ubuntu
+WorkingDirectory=/path/to/Umbrella
+ExecStart=/usr/bin/node /path/to/Umbrella/dist/runtime/index.js
+Restart=on-failure
+RestartSec=15
+EnvironmentFile=-/etc/umbrella/agent.env
+
+[Install]
+WantedBy=multi-user.target

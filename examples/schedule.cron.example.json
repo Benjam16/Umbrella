@@ -1,0 +1,12 @@
+{
+  "schedules": [
+    {
+      "intervalMs": 3600000,
+      "goal": "Hourly: review backlog file under UMBRELLA_SHIPPING_ROOT and log summary only."
+    },
+    {
+      "cron": "0 */6 * * *",
+      "goal": "Every 6 hours at minute 0: run a read-only health check on configured MCP tools (if any)."
+    }
+  ]
+}

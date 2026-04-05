@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+*.log
+*.tgz
+.planning/
+.umbrella/
+test-home/
+test-home2/

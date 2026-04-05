@@ -1,0 +1,565 @@
+/* Umbrella guide — light, full-bleed art, scroll reveals, Mac Terminal */
+
+:root {
+  --white: #fafafa;
+  --white-solid: #ffffff;
+  --text: #1a1a1a;
+  --text-soft: #5c5c5c;
+  --border: #e8e8e8;
+  --accent: #0d6b5c;
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", Monaco, Consolas, monospace;
+  --reveal-duration: 0.75s;
+  --reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .typing-caret {
+    animation: none !important;
+    border-right: none !important;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--white-solid);
+}
+
+/* Full-screen looping video + readability scrim */
+.bg-stack {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #e8eaed;
+}
+
+.bg-video {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+}
+
+/* Light wash so type stays readable over video */
+.bg-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.88) 35%,
+      rgba(255, 255, 255, 0.92) 100%
+    ),
+    radial-gradient(
+      ellipse 100% 80% at 50% 40%,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.15) 65%,
+      transparent 100%
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-video {
+    display: none;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.5rem 1rem;
+  background: var(--text);
+  color: var(--white-solid);
+  font-size: 0.85rem;
+  text-decoration: none;
+  border-radius: 6px;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  position: fixed;
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition:
+    opacity var(--reveal-duration) var(--reveal-ease),
+    transform var(--reveal-duration) var(--reveal-ease);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Stagger children (optional) */
+.reveal-stagger.is-visible .reveal-item:nth-child(1) {
+  transition-delay: 0ms;
+}
+.reveal-stagger.is-visible .reveal-item {
+  opacity: 1;
+  transform: none;
+}
+
+.reveal-item {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.65s var(--reveal-ease),
+    transform 0.65s var(--reveal-ease);
+}
+
+.reveal-stagger.is-visible .reveal-item:nth-child(1) {
+  transition-delay: 0.05s;
+}
+.reveal-stagger.is-visible .reveal-item:nth-child(2) {
+  transition-delay: 0.15s;
+}
+.reveal-stagger.is-visible .reveal-item:nth-child(3) {
+  transition-delay: 0.25s;
+}
+
+/* Top nav */
+.nav-min {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 1rem;
+  padding: 1.25rem 1.5rem 0;
+  font-size: 0.8rem;
+}
+
+.nav-min a {
+  color: var(--text-soft);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+.nav-min a:hover {
+  color: var(--accent);
+}
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 2.5rem 1.5rem 3rem;
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.hero h1 {
+  font-size: clamp(2.5rem, 8vw, 3.75rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin: 0 0 0.75rem;
+  color: var(--text);
+}
+
+.hero .tagline {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--text-soft);
+  font-weight: 400;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1.75rem;
+}
+
+.btn-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: #24292f;
+  border-radius: 8px;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.btn-github:hover {
+  background: #1a1e22;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.btn-github:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-github__icon {
+  flex-shrink: 0;
+}
+
+.btn-npm {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(13, 107, 92, 0.1);
+  border: 1px solid rgba(13, 107, 92, 0.25);
+  border-radius: 8px;
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn-npm:hover {
+  background: rgba(13, 107, 92, 0.16);
+  border-color: rgba(13, 107, 92, 0.4);
+  color: var(--accent);
+}
+
+.btn-npm:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Content sections */
+main {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+
+section {
+  margin-bottom: 3.5rem;
+  scroll-margin-top: 1.25rem;
+}
+
+section h2 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin: 0 0 1rem;
+}
+
+section h2.subhead {
+  margin-top: 2rem;
+}
+
+section p,
+section li {
+  color: var(--text);
+}
+
+section p {
+  margin: 0 0 1rem;
+}
+
+section ul,
+section ol {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: var(--text-soft);
+}
+
+section li {
+  margin-bottom: 0.4rem;
+}
+
+.section-lead {
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+/* Inline code */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+}
+
+/* Light cards for tables */
+.card {
+  background: var(--white-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.2rem 0;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.04);
+}
+
+table.spec {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+table.spec th,
+table.spec td {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+table.spec tr:last-child td {
+  border-bottom: none;
+}
+
+table.spec th {
+  font-weight: 600;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+table.spec td {
+  color: var(--text);
+  vertical-align: top;
+}
+table.spec td:first-child {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  white-space: normal;
+  word-break: break-word;
+  min-width: 7rem;
+}
+
+/* —— macOS-style Terminal (dark, like MacBook Terminal.app) —— */
+.mac-terminal {
+  margin: 1.25rem 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.07),
+    0 18px 48px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mac-terminal__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, #3d3d3d 0%, #323232 100%);
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.mac-terminal__lights {
+  display: flex;
+  gap: 7px;
+}
+
+.mac-terminal__lights span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+.mac-terminal__lights .close {
+  background: #ff5f56;
+}
+.mac-terminal__lights .min {
+  background: #ffbd2e;
+}
+.mac-terminal__lights .max {
+  background: #27c93f;
+}
+
+.mac-terminal__title {
+  flex: 1;
+  text-align: center;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b4b4b4;
+  letter-spacing: -0.01em;
+}
+
+.mac-terminal__body {
+  background: #0d0d0d;
+  color: #f0f0f0;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+/* Multi-line examples: monospace columns stay aligned (no mid-line wrap) */
+.mac-terminal__body .term-screen {
+  display: block;
+  margin: 0;
+  padding: 1rem 1.1rem 1.15rem;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  color: inherit;
+  tab-size: 4;
+}
+
+.mac-terminal__body .comment {
+  color: #6b6b6b;
+}
+
+.mac-terminal__body .cmd {
+  color: #7ee787;
+}
+
+.mac-terminal__body .prompt {
+  color: #58a6ff;
+  user-select: none;
+}
+
+/* Hero typing row: prompt + animated command stay on one baseline */
+.mac-terminal__body--hero {
+  padding: 1rem 1.1rem 1.15rem;
+  white-space: normal;
+  word-break: normal;
+}
+
+.mac-terminal__body--hero .term-comment {
+  display: block;
+  color: #6b6b6b;
+  margin-bottom: 0.5rem;
+}
+
+.mac-terminal__body--hero .term-row {
+  display: block;
+  white-space: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.mac-terminal__caption {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  margin: -0.35rem 0 1rem;
+}
+
+.mac-terminal__caption--spaced {
+  margin-top: 1rem;
+}
+
+.section-lead--compact {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.typing-caret {
+  border-right: 2px solid #7ee787;
+  animation: blinkCaret 1s step-end infinite;
+}
+
+@keyframes blinkCaret {
+  50% {
+    border-color: transparent;
+  }
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  margin-right: 0.35rem;
+}
+
+.badge-live {
+  background: rgba(13, 107, 92, 0.12);
+  color: var(--accent);
+}
+
+.badge-sim {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-soft);
+}
+
+footer.site-footer {
+  text-align: center;
+  padding: 2rem 1.5rem 3rem;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+
+footer.site-footer a {
+  color: var(--accent);
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0;
+}
+
+.site-footer__sep {
+  color: var(--border);
+  user-select: none;
+}
+
+.site-footer__gh {
+  color: #24292f;
+  font-weight: 600;
+}
+
+.site-footer__gh:hover {
+  color: #1a1e22;
+}

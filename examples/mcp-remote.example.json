@@ -1,0 +1,8 @@
+[
+  {
+    "url": "https://your-mcp-host.example/mcp",
+    "headers": {
+      "Authorization": "Bearer ${YOUR_REMOTE_MCP_TOKEN}"
+    }
+  }
+]

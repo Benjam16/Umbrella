@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent example — copy to ~/Library/LaunchAgents/com.umbrella.agent.plist
+  Adjust WorkingDirectory, ProgramArguments, and EnvironmentVariables.
+
+  Load:
+    launchctl load ~/Library/LaunchAgents/com.umbrella.agent.plist
+  Unload:
+    launchctl unload ~/Library/LaunchAgents/com.umbrella.agent.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.umbrella.agent</string>
+  <key>WorkingDirectory</key>
+  <string>/path/to/Umbrella</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/path/to/Umbrella/dist/runtime/index.js</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/umbrella-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/umbrella-agent.err</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ANTHROPIC_API_KEY</key>
+    <string></string>
+    <key>UMBRELLA_DASHBOARD_PORT</key>
+    <string>4578</string>
+  </dict>
+</dict>
+</plist>

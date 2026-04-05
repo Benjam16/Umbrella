@@ -1,0 +1,32 @@
+{
+  "name": "@umbrella/shipping-cli-template",
+  "version": "0.1.0",
+  "description": "Cookie-cutter TypeScript CLI (Umbrella shipping template — copy with umbrella scaffold cli)",
+  "type": "module",
+  "bin": {
+    "shipping-template": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  }
+}

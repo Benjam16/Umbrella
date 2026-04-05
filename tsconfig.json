@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "runtime/**/*.ts",
+    "modules/agent-runtime/**/*.ts",
+    "modules/orchestrate/specialists/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}
