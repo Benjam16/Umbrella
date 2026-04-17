@@ -7,7 +7,7 @@
 
 **Repository:** [github.com/Benjam16/Umbrella](https://github.com/Benjam16/Umbrella) · **Published CLI:** [`@benjam16/umbrella`](https://www.npmjs.com/package/@benjam16/umbrella)
 
-Umbrella is a **monorepo** that hosts (1) an installable **CLI and long-running agent daemon** with planner → executor → memory, MCP, and optional chat bridges, (2) a **Sovereign Agentic Workstation** desktop + API stack under [`platform/`](./platform), and (3) a small **static marketing site** under [`website/`](./website). This README is the main entry for contributors and users browsing GitHub; deeper references are linked throughout.
+Umbrella is a **monorepo** that hosts (1) an installable **CLI and long-running agent daemon** with planner → executor → memory, MCP, and optional chat bridges, (2) a **Sovereign Agentic Workstation** desktop + API stack under [`platform/`](./platform), and (3) a **Next.js marketing / showcase** site under [`website/`](./website) (Bento + simulated runner + Edge health demo). This README is the main entry for contributors and users browsing GitHub; deeper references are linked throughout.
 
 ---
 
@@ -74,7 +74,7 @@ flowchart TB
   end
 
   subgraph web["website/"]
-    SITE[Static marketing site]
+    SITE[Next.js showcase]
   end
 
   CLI --> AGENT
@@ -83,7 +83,7 @@ flowchart TB
 
 - **CLI root** (`src/`, `modules/`, `runtime/`, `dist/`): TypeScript package published to npm; see [`package.json`](./package.json) `files` and `bin`.
 - **`platform/`**: Not published as a public npm app today; run from source. API defaults to `http://127.0.0.1:8787` unless `PORT` is set.
-- **`website/`**: No Node build step; host as static files.
+- **`website/`**: Next.js 15 (App Router) + Tailwind + Framer Motion; deploy on Vercel with Root Directory `website`.
 
 ---
 
@@ -99,7 +99,7 @@ Install once → get slash-command templates for **Claude Code**, **Cursor**, **
 
 **→ Full marketing / feature list, automation ideas, and standalone deployment notes: [FEATURES.md](./FEATURES.md)**
 
-**→ Static marketing / user guide (`website/`):** deploy on [Vercel](https://vercel.com) with **Root Directory = `website`** — see [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
+**→ Showcase site (`website/`):** Next.js Bento + live terminal demo — deploy on [Vercel](https://vercel.com) with **Root Directory = `website`** — see [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
 
 ```bash
 npx @benjam16/umbrella@latest
@@ -198,7 +198,7 @@ npm run dev:desktop  # Tauri + Vite (Rust required for full Tauri build)
 
 ## Marketing site
 
-The **`website/`** folder is a **static** site (HTML, CSS, JS, assets). Deploy it with **Root Directory = `website`** on Vercel (or any static host). Step-by-step: [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
+The **`website/`** folder is a **self-contained Next.js** app (`npm run dev` / `npm run build`). Deploy with **Root Directory = `website`** on Vercel. Step-by-step: [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
 
 ---
 

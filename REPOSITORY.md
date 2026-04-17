@@ -8,7 +8,7 @@ This document is the **operator’s map** of the [Umbrella](https://github.com/B
 |--------|----------|--------------|------|
 | **Umbrella CLI / agent daemon** | Repository root (`src/`, `modules/`, `runtime/`, `dist/`) | [`@benjam16/umbrella` on npm](https://www.npmjs.com/package/@benjam16/umbrella) | Installable CLI, 24/7 agent runtime, MCP, Telegram/Slack bridges, dashboard |
 | **Sovereign Agentic Workstation (platform)** | [`platform/`](./platform) | **Not** on npm (private workspace) | Tauri desktop + Hono API: DAG runs, self-healing runner, backups/DR, blueprints, minting |
-| **Marketing site** | [`website/`](./website) | Deploy separately (e.g. [Vercel](https://vercel.com)) | Static landing page; see [`website/deploy-vercel.txt`](./website/deploy-vercel.txt) |
+| **Marketing / showcase site** | [`website/`](./website) | Deploy separately (e.g. [Vercel](https://vercel.com)) | Next.js 15 Bento + simulated runner; see [`website/deploy-vercel.txt`](./website/deploy-vercel.txt) |
 
 Capability narrative for the workstation stack: [`CAPABILITIES.md`](./CAPABILITIES.md).
 
@@ -20,7 +20,7 @@ Umbrella/
 ├── bin/                         # Installers and helpers
 ├── tests/                       # CLI-focused tests (plan replay, etc.)
 ├── examples/                    # Config templates, shipping-cli template
-├── website/                     # Static marketing site
+├── website/                     # Next.js showcase (Tailwind, Framer Motion)
 ├── platform/                    # npm workspace: apps/api, apps/desktop, packages/shared
 │   ├── apps/api/               # Hono API (Node 20+)
 │   ├── apps/desktop/           # Tauri 2 + React (Vite)

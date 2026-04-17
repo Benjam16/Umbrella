@@ -1,0 +1,65 @@
+{
+  "heroCommand": "umbrella launch \"Research competitors and mint a strategy on Base\"",
+  "mission": {
+    "title": "Market intelligence → Base strategy",
+    "objective": "Research top competitors, synthesize positioning, draft on-chain mint parameters."
+  },
+  "heroLogs": [
+    "[supervisor] Pre-flight: mission class = growth + chain touchpoint",
+    "[supervisor] Planner: emitting DAG (7 tasks, 3 parallel lanes)",
+    "[runner] CHECKPOINT ok → branch umbrella/mission-7f3a",
+    "[worker:SCRAPER] SCRAPE queued (risk 4/10)",
+    "[worker:CODER] VERIFY after FILE_WRITE (self-heal bound = 5)",
+    "[wallet] TX proposal staged → BLOCKED_FOR_SIGNATURE (risk 10/10)"
+  ],
+  "dag": {
+    "nodes": [
+      { "id": "t1", "label": "Plan", "worker": "SUPERVISOR", "x": 8, "y": 42 },
+      { "id": "t2", "label": "Scrape", "worker": "SCRAPER", "x": 28, "y": 18 },
+      { "id": "t3", "label": "Scrape B", "worker": "SCRAPER", "x": 28, "y": 66 },
+      { "id": "t4", "label": "Code", "worker": "CODER", "x": 52, "y": 42 },
+      { "id": "t5", "label": "Verify", "worker": "AUDITOR", "x": 76, "y": 42 },
+      { "id": "t6", "label": "Mint", "worker": "SUPERVISOR", "x": 92, "y": 42 }
+    ],
+    "edges": [
+      { "from": "t1", "to": "t2" },
+      { "from": "t1", "to": "t3" },
+      { "from": "t2", "to": "t4" },
+      { "from": "t3", "to": "t4" },
+      { "from": "t4", "to": "t5" },
+      { "from": "t5", "to": "t6" }
+    ]
+  },
+  "toolActions": [
+    {
+      "id": "a1",
+      "tool": "run_command",
+      "risk": 4,
+      "detail": "curl -s competitor pricing feed"
+    },
+    {
+      "id": "a2",
+      "tool": "write_file_patch",
+      "risk": 6,
+      "detail": "packages/strategy/src/positioning.ts"
+    },
+    {
+      "id": "a3",
+      "tool": "run_command",
+      "risk": 8,
+      "detail": "docker compose -f stack.prod.yml up -d --build"
+    },
+    {
+      "id": "a4",
+      "tool": "propose_transaction",
+      "risk": 10,
+      "detail": "Base · mint strategy capsule (value set on approve)"
+    }
+  ],
+  "selfHealSnippet": {
+    "fail": "FAIL: AssertionError: expected 204, got 500",
+    "fix": "PATCH auth/middleware.ts — stale tenant cache invalidated",
+    "pass": "PASS: npm test (12 files, 48 tests)"
+  },
+  "ceoBriefing": "• Competitors cluster on price; differentiation is **latency + custody** — own the \"sovereign desk\" narrative.\n• Ship a **checkpointed** Base mint path: policy gate at 7/10, human signature above 7, integrity hash on snapshots.\n• Next 14 days: one public case study (redacted) + DR drill with restore token handshake."
+}
