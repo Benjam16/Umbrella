@@ -1,0 +1,31 @@
+Deploy Umbrella marketing site on Vercel
+========================================
+
+This folder is a static site (index.html + css/ + js/ + assets/). No build step.
+
+Option A — GitHub (recommended)
+-------------------------------
+1. Push the Umbrella repo to GitHub (already: github.com/Benjam16/Umbrella).
+2. Open https://vercel.com → Add New Project → Import that repository.
+3. Project Settings (if you do NOT use the repo-root vercel.json):
+   - Root Directory: set to  website   (not the repo root).
+   - Framework Preset: Other
+   - Build Command: leave empty
+   - Output Directory: "." when root is website
+   The repo includes /vercel.json with outputDirectory "website" so imports
+   from the repo root still deploy the site correctly.
+4. Deploy. Your site URL will be something like https://<project>.vercel.app
+
+Option B — Vercel CLI (from your Mac)
+-------------------------------------
+  cd /path/to/Umbrella/website
+  npx vercel        # preview
+  npx vercel --prod # production
+
+First time: link to your Vercel account and team.
+
+Notes
+-----
+- background.mp4 is served from /assets/; keep file size reasonable for free-tier bandwidth.
+- After changing the site, push to GitHub (if connected) and Vercel redeploys automatically.
+- Optional: add a custom domain in Vercel → Project → Settings → Domains.

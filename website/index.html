@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Umbrella — User guide</title>
+    <meta
+      name="description"
+      content="Install and run Umbrella: CLI, agent daemon, MCP, Telegram, Discord, Slack, dashboard API, schedules, and IDE skills."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="bg-stack" aria-hidden="true">
+      <video
+        class="bg-video"
+        autoplay
+        muted
+        loop
+        playsinline
+        webkit-playsinline=""
+        preload="auto"
+        disablepictureinpicture
+        disableremoteplayback
+      >
+        <source src="assets/background.webm" type="video/webm" />
+        <source src="assets/background.mp4" type="video/mp4" />
+      </video>
+      <div class="bg-scrim"></div>
+    </div>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <div class="page">
+      <nav class="nav-min reveal" aria-label="Sections">
+        <a href="#install">Install</a>
+        <a href="#cli">CLI</a>
+        <a href="#ide">IDE</a>
+        <a href="#agent">Agent</a>
+        <a href="#memory">Memory</a>
+        <a href="#executor">Executor</a>
+        <a href="#chaos">Chaos</a>
+        <a href="#gateways">Chat</a>
+        <a href="#api">API</a>
+        <a href="#env">Env</a>
+        <a href="#limits">Roadmap</a>
+      </nav>
+
+      <header class="hero reveal">
+        <h1>Umbrella</h1>
+        <p class="tagline">
+          One CLI, skills for your AI editor, and an optional agent loop with
+          memory, MCP tools, chat bridges, and chaos recovery.
+        </p>
+
+        <div class="mac-terminal" aria-label="Quick install">
+          <div class="mac-terminal__toolbar">
+            <div class="mac-terminal__lights" aria-hidden="true">
+              <span class="close"></span>
+              <span class="min"></span>
+              <span class="max"></span>
+            </div>
+            <div class="mac-terminal__title">Terminal — zsh</div>
+          </div>
+          <div class="mac-terminal__body mac-terminal__body--hero">
+            <span class="term-comment"># Quick start (Node 18+)</span>
+            <span class="term-row"
+              ><span class="prompt">➜ ~ </span
+              ><span id="typing-line" class="cmd typing-caret"></span
+            ></span>
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <a
+            class="btn-github"
+            href="https://github.com/Benjam16/Umbrella"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg
+              class="btn-github__icon"
+              aria-hidden="true"
+              width="20"
+              height="20"
+              viewBox="0 0 98 96"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill="currentColor"
+                fill-rule="evenodd"
+                clip-rule="evenodd"
+                d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.339 14.304 4.081.452-3.192 1.72-5.352 3.136-6.574-11.056-1.255-22.612-5.467-22.612-24.45 0-5.427 1.98-9.878 5.194-13.345-.494-1.272-2.25-6.455.502-13.439 0 0 4.228-1.36 13.91 5.07a47.846 47.846 0 0 1 12.488-1.69c4.23 0 8.489.571 12.488 1.69 9.674-6.43 13.898-5.07 13.898-5.07 2.756 6.984 1.004 12.167.502 13.439 3.22 3.467 5.184 7.918 5.184 13.345 0 19.07-11.624 23.195-22.724 24.419 1.765 1.548 3.316 4.481 3.316 9.22 0 6.644-.08 11.98-.08 13.606 0 1.314.891 2.865 3.342 2.36 19.368-6.52 33.354-24.937 33.354-46.69C97.707 22 75.788 0 48.854 0z"
+              />
+            </svg>
+            View on GitHub
+          </a>
+          <a
+            class="btn-npm"
+            href="https://www.npmjs.com/package/@benjam16/umbrella"
+            target="_blank"
+            rel="noopener noreferrer"
+            >npm package</a
+          >
+        </div>
+      </header>
+
+      <main id="main">
+        <section id="what" class="reveal">
+          <h2>What it is</h2>
+          <p class="section-lead">
+            Umbrella is an <strong>installer</strong> (Markdown skills into
+            <code>~/.umbrella</code> or <code>./.umbrella</code>), a
+            <strong>CLI</strong> named <code>umbrella</code>, and a
+            <strong>Node daemon</strong> that plans, runs tools (including
+            <strong>MCP</strong>), and writes to SQLite—with optional
+            <strong>Telegram</strong>, <strong>Discord</strong>, and
+            <strong>Slack</strong> chat bridges and a small <strong>HTTP
+            dashboard</strong>.
+          </p>
+          <ul>
+            <li>
+              <span class="badge badge-live">Live</span>
+              Installer, daemon, SQLite, shell/read/write,
+              <code>mcp:…</code> calls, chaos recovery, run log + scorecard UI,
+              cron/interval <strong>schedules</strong>, optional voice
+              transcribe hook.
+            </li>
+            <li>
+              <span class="badge badge-sim">IDE</span>
+              <code>/umb:…</code> in the daemon is simulated; run those flows in
+              Claude / Cursor / Gemini with skills pointed at your
+              <code>.umbrella</code> folder.
+            </li>
+          </ul>
+        </section>
+
+        <section id="install" class="reveal">
+          <h2>Install</h2>
+          <p>Published package: <code>@benjam16/umbrella</code> (adjust scope if yours differs).</p>
+
+          <p class="mac-terminal__caption">Global CLI</p>
+          <div class="mac-terminal">
+            <div class="mac-terminal__toolbar">
+              <div class="mac-terminal__lights" aria-hidden="true">
+                <span class="close"></span>
+                <span class="min"></span>
+                <span class="max"></span>
+              </div>
+              <div class="mac-terminal__title">Terminal</div>
+            </div>
+            <div class="mac-terminal__body">
+              <pre class="term-screen" aria-label="Global install commands"><span class="comment"># Install binary globally, then verify</span>
+<span class="prompt">➜ ~ </span><span class="cmd">npm install -g @benjam16/umbrella</span>
+<span class="prompt">➜ ~ </span><span class="cmd">umbrella --version</span></pre>
+            </div>
+          </div>
+
+          <p class="mac-terminal__caption">Without global install (npx)</p>
+          <div class="mac-terminal">
+            <div class="mac-terminal__toolbar">
+              <div class="mac-terminal__lights" aria-hidden="true">
+                <span class="close"></span>
+                <span class="min"></span>
+                <span class="max"></span>
+              </div>
+              <div class="mac-terminal__title">Terminal</div>
+            </div>
+            <div class="mac-terminal__body">
+              <pre class="term-screen" aria-label="npx commands"><span class="comment"># Copy skills, then start the agent</span>
+<span class="prompt">➜ ~ </span><span class="cmd">npx @benjam16/umbrella@latest install</span>
+<span class="prompt">➜ ~ </span><span class="cmd">npx @benjam16/umbrella@latest agent start</span></pre>
+            </div>
+          </div>
+
+          <p class="mac-terminal__caption">From source</p>
+          <div class="mac-terminal">
+            <div class="mac-terminal__toolbar">
+              <div class="mac-terminal__lights" aria-hidden="true">
+                <span class="close"></span>
+                <span class="min"></span>
+                <span class="max"></span>
+              </div>
+              <div class="mac-terminal__title">Terminal</div>
+            </div>
+            <div class="mac-terminal__body">
+              <pre class="term-screen" aria-label="Clone and dev commands"><span class="comment"># Clone, deps, build; local skills in ./.umbrella with --local</span>
+<span class="prompt">➜ ~ </span><span class="cmd">git clone &lt;repo&gt; &amp;&amp; cd Umbrella</span>
+<span class="prompt">➜ Umbrella </span><span class="cmd">npm install &amp;&amp; npm run build</span>
+<span class="prompt">➜ Umbrella </span><span class="cmd">node bin/install.js --claude --local</span>
+<span class="comment"># Dev CLI (TypeScript via tsx; agent still uses dist/)</span>
+<span class="prompt">➜ Umbrella </span><span class="cmd">npm run dev -- --version</span>
+<span class="prompt">➜ Umbrella </span><span class="cmd">node dist/src/cli.js agent start</span></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="cli" class="reveal">
+          <h2>CLI</h2>
+          <div class="card">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th>Effect</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>umbrella install</code></td>
+                  <td>
+                    Interactive install: copy modules and agent runtime into
+                    <code>~/.umbrella</code> or <code>./.umbrella</code>.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>umbrella up</code></td>
+                  <td>
+                    Same as <code>agent start</code>. Optional
+                    <code>--dry-run</code> previews <code>.env</code> +
+                    <code>config.json</code> merge without starting the daemon.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>umbrella agent start</code></td>
+                  <td>
+                    Heartbeat: planner → executor → verifier → memory summarize
+                    (MCP init, gateways, dashboard if configured).
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>umbrella agent status</code></td>
+                  <td>Whether <code>~/.umbrella/agent.pid</code> points at a live process.</td>
+                </tr>
+                <tr>
+                  <td><code>umbrella agent stop</code></td>
+                  <td>Sends <code>SIGTERM</code> to the daemon PID.</td>
+                </tr>
+                <tr>
+                  <td><code>umbrella doctor</code></td>
+                  <td>
+                    Node, pid, SQLite, LLM env, Telegram / Discord / Slack /
+                    voice-STT hints, schedules, token budget.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>umbrella config-path</code></td>
+                  <td>Prints resolved <code>config.json</code> path.</td>
+                </tr>
+                <tr>
+                  <td><code>umbrella session reset</code></td>
+                  <td>Clears <code>~/.umbrella/session.json</code> (new session on next heartbeat).</td>
+                </tr>
+                <tr>
+                  <td><code>umbrella scaffold cli …</code></td>
+                  <td>
+                    Shipping template: TypeScript CLI + Vitest + publish workflow
+                    (see <code>examples/SHIPPING.md</code>).
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ide" class="reveal">
+          <h2>IDE</h2>
+          <p>
+            Point Claude, Cursor, or Gemini CLI at
+            <code>~/.umbrella/skills/</code> and
+            <code>~/.umbrella/commands/</code>. Each module’s
+            <code>SKILL.md</code> describes <code>/umb:…</code> workflows:
+            coding, lean, tools, memory, orchestrate, secure, observe, flow,
+            agent-runtime.
+          </p>
+          <p>
+            The daemon does not use Cursor as an LLM backend; it calls
+            Anthropic, OpenAI, or Google APIs—or any
+            <strong>OpenAI-compatible</strong> endpoint via
+            <code>UMBRELLA_OPENAI_BASE_URL</code> (e.g. Ollama) plus
+            <code>UMBRELLA_OLLAMA_MODEL</code> / <code>UMBRELLA_MODEL</code>.
+          </p>
+        </section>
+
+        <section id="agent" class="reveal">
+          <h2>Agent heartbeat</h2>
+          <ol>
+            <li>
+              Picks a goal: <strong>foreground</strong> interrupt,
+              <strong>scheduled</strong> (<code>schedule.json</code> → SQLite),
+              <strong>core</strong> background, or idle if paused.
+            </li>
+            <li>Planner emits XML (<code>&lt;plan&gt;</code>) — LLM or fallback; tool hints include MCP names.</li>
+            <li>Executor runs each <code>&lt;task&gt;</code> (optional per-slice subagent if configured).</li>
+            <li>Verifier checks the last result (heuristics + optional shell hook).</li>
+            <li>Learner + skill promotion pipeline; memory compaction optional.</li>
+            <li>Optional digest to chat every <code>UMBRELLA_DIGEST_HEARTBEATS</code> cycles.</li>
+          </ol>
+          <p>
+            <code>UMBRELLA_HEARTBEAT_MS</code> defaults to <code>60000</code>.
+            <code>UMBRELLA_SCHEDULE_NOTIFY=1</code> pings the last-used chat after a
+            <strong>scheduled</strong> heartbeat finishes.
+          </p>
+        </section>
+
+        <section id="memory" class="reveal">
+          <h2>Memory</h2>
+          <p>
+            SQLite at <code>~/.umbrella/memory.db</code>: execution results,
+            chaos events, chat ingests, LLM audit references, etc.
+          </p>
+          <p>
+            <strong>Agent state</strong> in the same DB: core goal, foreground
+            goal, background pause, last Telegram / Discord / Slack channel for
+            digests. Table <code>umbrella_schedules</code> stores synced
+            cron/interval jobs from <code>~/.umbrella/schedule.json</code>.
+          </p>
+        </section>
+
+        <section id="executor" class="reveal">
+          <h2>Executor</h2>
+          <div class="card">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>/umb:…</code></td>
+                  <td>Simulated in daemon; real runs happen in the IDE.</td>
+                </tr>
+                <tr>
+                  <td><code>shell:…</code></td>
+                  <td>
+                    Shell (safeguards); failures can trigger chaos recovery if an
+                    LLM is configured.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>read:path</code></td>
+                  <td>Up to ~2000 chars.</td>
+                </tr>
+                <tr>
+                  <td><code>write:path|body</code></td>
+                  <td>Writes file.</td>
+                </tr>
+                <tr>
+                  <td><code>mcp:{…}</code></td>
+                  <td>
+                    JSON line: <code>server</code> index + <code>name</code> +
+                    <code>arguments</code> when <code>UMBRELLA_MCP_ENABLED=1</code>
+                    and servers are configured.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>scaffold-cli:{…}</code></td>
+                  <td>
+                    npm CLI template under <code>UMBRELLA_SHIPPING_ROOT</code> when set.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>git …</code> / <code>npm …</code> / <code>node …</code></td>
+                  <td>Shell with chaos wrapper where applicable.</td>
+                </tr>
+                <tr>
+                  <td>Other text</td>
+                  <td>Optional one-line LLM router → tool, MCP, or shell.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="chaos" class="reveal">
+          <h2>Chaos &amp; dashboard</h2>
+          <p>
+            Failed shell runs can invoke the Chaos Specialist (LLM + optional
+            URL text preview via <code>UMBRELLA_WEB_FETCH</code>), retry with
+            recovery; <code>chaos_event</code> rows in memory. Optional human
+            approval: <code>UMBRELLA_CHAOS_APPROVE=1</code> +
+            <code>POST /api/chaos-approve</code>.
+          </p>
+          <p>
+            Set <code>UMBRELLA_DASHBOARD_PORT</code> (e.g. <code>4578</code>) and open
+            <code>http://127.0.0.1:4578/</code> — HTML UI plus JSON routes such as
+            <code>/api/chaos-logs</code>, <code>/api/last-run</code>,
+            <code>/api/run-log</code> (scorecard), <code>/api/version</code>,
+            <code>/api/health</code>, <code>/api/schedules</code>,
+            <code>/api/mcp-tools</code>, <code>/api/tools</code> (built-in + MCP list).
+          </p>
+          <p>
+            <code>UMB_X402_ENABLED=1</code> enables a payment-path stub for
+            quota-style errors.
+          </p>
+        </section>
+
+        <section id="gateways" class="reveal">
+          <h2>Chat gateways</h2>
+          <p>
+            All use the same task surface as the HTTP API; messages are handled
+            by the shared command handler. Set only the bridges you need.
+          </p>
+          <div class="card">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th>Channel</th>
+                  <th>Setup</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Telegram</strong></td>
+                  <td>
+                    <code>TELEGRAM_BOT_TOKEN</code> —
+                    <code>/umb …</code> commands; digests and schedule notify use the
+                    last chat that messaged the bot.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Discord</strong></td>
+                  <td>
+                    <code>DISCORD_BOT_TOKEN</code> + <strong>Message Content Intent</strong>
+                    — <code>!umb …</code> in servers/DMs.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Slack</strong></td>
+                  <td>
+                    Socket Mode: <code>SLACK_BOT_TOKEN</code>,
+                    <code>SLACK_APP_TOKEN</code>,
+                    <code>SLACK_SIGNING_SECRET</code> (all three) —
+                    <code>!umb …</code> same as Discord.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="api" class="reveal">
+          <h2>HTTP API</h2>
+          <p>
+            When the dashboard port is set, mutating routes expect
+            <code>Authorization: Bearer &lt;UMBRELLA_INBOUND_SECRET&gt;</code>
+            (set the secret in your env). Examples below use
+            <code>4578</code>; change the port to match yours.
+          </p>
+          <div class="mac-terminal">
+            <div class="mac-terminal__toolbar">
+              <div class="mac-terminal__lights" aria-hidden="true">
+                <span class="close"></span>
+                <span class="min"></span>
+                <span class="max"></span>
+              </div>
+              <div class="mac-terminal__title">Terminal</div>
+            </div>
+            <div class="mac-terminal__body">
+              <pre class="term-screen" aria-label="curl API examples"><span class="comment"># Foreground goal (next heartbeat)</span>
+<span class="prompt">➜ ~ </span><span class="cmd">curl -sS -X POST http://127.0.0.1:4578/api/goal \</span>
+<span class="cmd">  -H "Authorization: Bearer $UMBRELLA_INBOUND_SECRET" \</span>
+<span class="cmd">  -H "Content-Type: application/json" \</span>
+<span class="cmd">  -d '{"goal":"Fix flaky test in worker"}'</span>
+
+<span class="comment"># Unified tool list (no auth)</span>
+<span class="prompt">➜ ~ </span><span class="cmd">curl -sS http://127.0.0.1:4578/api/tools</span>
+
+<span class="comment"># Voice: set UMBRELLA_VOICE_STT to your STT binary first</span>
+<span class="prompt">➜ ~ </span><span class="cmd">curl -sS -X POST http://127.0.0.1:4578/api/voice-transcribe \</span>
+<span class="cmd">  -H "Authorization: Bearer $UMBRELLA_INBOUND_SECRET" \</span>
+<span class="cmd">  -H "Content-Type: application/json" \</span>
+<span class="cmd">  -d '{"audioBase64":"&lt;base64&gt;","setForegroundGoal":true}'</span></pre>
+            </div>
+          </div>
+          <p class="mac-terminal__caption mac-terminal__caption--spaced">
+            See <code>docs/VOICE.md</code> for raw audio upload and limits (6 MiB max).
+          </p>
+        </section>
+
+        <section id="env" class="reveal">
+          <h2>Environment</h2>
+          <p class="section-lead section-lead--compact">
+            Dotenv load order for the daemon: <code>UMBRELLA_DOTENV</code> (if set),
+            <code>~/.umbrella/.env</code>, optional secrets helper, then
+            <code>config.json</code> — existing non-empty shell env wins.
+          </p>
+          <div class="card">
+            <table class="spec">
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Purpose</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>ANTHROPIC_API_KEY</code></td>
+                  <td>Claude</td>
+                </tr>
+                <tr>
+                  <td><code>OPENAI_API_KEY</code></td>
+                  <td>OpenAI / Codex-style</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_OPENAI_BASE_URL</code></td>
+                  <td>OpenAI-compatible API (e.g. Ollama <code>/v1</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_OLLAMA_MODEL</code> / <code>UMBRELLA_MODEL</code></td>
+                  <td>Model id for the active provider</td>
+                </tr>
+                <tr>
+                  <td><code>GEMINI_API_KEY</code> / <code>GOOGLE_API_KEY</code></td>
+                  <td>Google AI</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_LLM_PROVIDER</code></td>
+                  <td><code>anthropic</code> | <code>openai</code> | <code>google</code> | …</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_MCP_ENABLED</code></td>
+                  <td><code>1</code> to connect MCP servers from env / file</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_MCP_SERVERS</code></td>
+                  <td>JSON array: stdio <code>command</code> and/or HTTP <code>url</code> (+ <code>headers</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_MCP_SERVERS_FILE</code></td>
+                  <td>Path to JSON file (merged with env list)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_INBOUND_SECRET</code></td>
+                  <td>Bearer token for dashboard POST routes</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_DASHBOARD_PORT</code></td>
+                  <td>Local dashboard + JSON API (e.g. <code>4578</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>TELEGRAM_BOT_TOKEN</code></td>
+                  <td>Telegram bot</td>
+                </tr>
+                <tr>
+                  <td><code>DISCORD_BOT_TOKEN</code></td>
+                  <td>Discord bot (<code>!umb</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>SLACK_BOT_TOKEN</code> + <code>SLACK_APP_TOKEN</code> + <code>SLACK_SIGNING_SECRET</code></td>
+                  <td>Slack Socket Mode (<code>!umb</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_VOICE_STT</code></td>
+                  <td>Executable: argv[1]=audio file, stdout=transcript</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_VOICE_STT_TIMEOUT_MS</code></td>
+                  <td>STT subprocess timeout (default 120000)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_HEARTBEAT_MS</code></td>
+                  <td>Daemon loop interval (default 60000)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_DIGEST_HEARTBEATS</code></td>
+                  <td>Post digest to chat every N heartbeats</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_SCHEDULE_NOTIFY</code></td>
+                  <td><code>1</code> — ping chat after scheduled heartbeat</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_WEB_FETCH</code></td>
+                  <td>Allow Chaos specialist URL text preview (allowlist)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_SHIPPING_ROOT</code></td>
+                  <td>Root for <code>scaffold-cli:</code> agent actions</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_SUBAGENT_PER_SLICE</code></td>
+                  <td><code>1</code> + LLM — expand each plan slice via subagent</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_PLANNER_TOOL_HINTS_MAX_CHARS</code></td>
+                  <td>Cap orchestrator MCP/tool block in the planner prompt</td>
+                </tr>
+                <tr>
+                  <td><code>UMB_X402_ENABLED</code></td>
+                  <td>Payment stub for quota-style errors</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_VERIFY_COMMAND</code></td>
+                  <td>Shell during verify (exit 0 + heuristic pass)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_STUCK_THRESHOLD</code></td>
+                  <td>Failures before escalation goal (default 3)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_LLM_AUDIT</code></td>
+                  <td>Set <code>0</code> to disable <code>llm-audit.log</code></td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_TOKEN_BUDGET_DAILY</code></td>
+                  <td>Approximate daily LLM token budget (UTC)</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_MEMORY_LLM_COMPACT</code></td>
+                  <td>Optional memory compaction via LLM</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_SECRETS_HELPER</code></td>
+                  <td>Executable printing JSON env map for empty keys only</td>
+                </tr>
+                <tr>
+                  <td><code>UMBRELLA_MAX_TASK_TOKENS</code> / slice / milestone</td>
+                  <td>Orchestrator budget hints (env or JSON)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="limits" class="reveal">
+          <h2>What’s built in now</h2>
+          <ul>
+            <li>
+              <strong>PID + service UX:</strong>
+              <code>umbrella up</code> / <code>agent start|stop|status</code>,
+              <code>~/.umbrella/agent.pid</code>, single-instance guard,
+              <code>umbrella doctor</code>, <code>session reset</code>,
+              <code>config-path</code>.
+            </li>
+            <li>
+              <strong>GSD-style orchestration:</strong> planner emits
+              <code>&lt;milestone&gt;</code> → <code>&lt;slice&gt;</code> →
+              <code>&lt;task&gt;</code>; optional per-slice subagent expansion
+              (<code>UMBRELLA_SUBAGENT_PER_SLICE=1</code> + LLM); tool hints include
+              MCP server indices.
+            </li>
+            <li>
+              <strong>Stuck-loop guard:</strong> similar failures in a row raise an
+              escalation goal (<code>UMBRELLA_STUCK_THRESHOLD</code>).
+            </li>
+            <li>
+              <strong>Verifier hook:</strong> <code>UMBRELLA_VERIFY_COMMAND</code>
+              (e.g. <code>npm test</code>) — exit 0 <em>and</em> text heuristic.
+            </li>
+            <li>
+              <strong>Run log + tests:</strong> JSONL heartbeats with plan/execution
+              previews; <code>npm test</code> checks deterministic plan XML expansion.
+            </li>
+          </ul>
+          <h2 class="subhead">Remaining limits (next upgrades)</h2>
+          <ul>
+            <li>
+              <strong>Subagent depth:</strong> optional slice expansion exists, but not
+              full nested worker farms or isolated sandboxes by default.
+            </li>
+            <li>
+              <strong>Chaos / LLM shell risk:</strong> model-driven recovery; tighten
+              <code>shell-policy</code>, containers, or human approval for production.
+            </li>
+            <li>
+              <strong>Verifier:</strong> no second “judge” LLM or structured rubric yet.
+            </li>
+            <li>
+              <strong>Bundled STT/TTS:</strong> voice path is external binary + HTTP;
+              no in-process speech yet.
+            </li>
+          </ul>
+        </section>
+
+        <footer class="site-footer reveal">
+          <p class="site-footer__links">
+            <a
+              href="https://github.com/Benjam16/Umbrella"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="site-footer__gh"
+              >GitHub</a
+            >
+            <span class="site-footer__sep" aria-hidden="true">·</span>
+            <a
+              href="https://www.npmjs.com/package/@benjam16/umbrella"
+              target="_blank"
+              rel="noopener noreferrer"
+              >@benjam16/umbrella</a
+            >
+            <span class="site-footer__sep" aria-hidden="true">·</span>
+            MIT
+          </p>
+        </footer>
+      </main>
+    </div>
+
+    <script src="js/main.js" defer></script>
+  </body>
+</html>
