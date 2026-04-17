@@ -2,11 +2,17 @@
 
 **Source:** [github.com/Benjam16/Umbrella](https://github.com/Benjam16/Umbrella)
 
+> **Looking for the Sovereign Agentic Workstation (v1.0)?** See [`platform/`](./platform) for the Tauri desktop + Hono API monorepo (supervisor-worker DAG, self-healing runner, sandboxed patch promotion, backup/restore with DR health, MCP client, blueprint gallery + minting). A one-page capability map lives in [`CAPABILITIES.md`](./CAPABILITIES.md).
+>
+> The rest of this README describes the original **CLI / agent daemon** (`@benjam16/umbrella`), which is a separate product that also lives in this repo.
+
 **One CLI. One agent. Everything done.**
 
 Install once → get slash-command templates for **Claude Code**, **Cursor**, **Gemini CLI**, **OpenAI Codex**-style setups, and other runtimes, plus a 24/7 autonomous agent (planner → executor → memory) with an optional Telegram bridge.
 
 **→ Full marketing / feature list, automation ideas, and standalone deployment notes: [FEATURES.md](./FEATURES.md)**
+
+**→ Static marketing / user guide (`website/`):** deploy on [Vercel](https://vercel.com) with **Root Directory = `website`** — see [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
 
 ```bash
 npx @benjam16/umbrella@latest
