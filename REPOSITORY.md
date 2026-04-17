@@ -27,7 +27,7 @@ Umbrella/
 │   └── packages/shared/        # Shared types/schemas
 ├── CAPABILITIES.md             # Product + API summary (workstation)
 ├── FEATURES.md                 # CLI feature list and ops ideas
-├── README.md                   # Primary entry (CLI + pointers)
+├── README.md                   # GitHub landing page (badges, TOC, CLI + platform pointers)
 └── REPOSITORY.md               # This file
 ```
 

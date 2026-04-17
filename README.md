@@ -1,19 +1,97 @@
 # Umbrella ☂️
 
-**Source:** [github.com/Benjam16/Umbrella](https://github.com/Benjam16/Umbrella)
+[![CI](https://github.com/Benjam16/Umbrella/actions/workflows/ci.yml/badge.svg)](https://github.com/Benjam16/Umbrella/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@benjam16/umbrella?label=npm)](https://www.npmjs.com/package/@benjam16/umbrella)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node](https://img.shields.io/node/v/@benjam16/umbrella)](https://nodejs.org/)
 
-> **Looking for the Sovereign Agentic Workstation (v1.0)?** See [`platform/`](./platform) for the Tauri desktop + Hono API monorepo (supervisor-worker DAG, self-healing runner, sandboxed patch promotion, backup/restore with DR health, MCP client, blueprint gallery + minting). A one-page capability map lives in [`CAPABILITIES.md`](./CAPABILITIES.md).
->
-> The rest of this README describes the original **CLI / agent daemon** (`@benjam16/umbrella`), which is a separate product that also lives in this repo.
+**Repository:** [github.com/Benjam16/Umbrella](https://github.com/Benjam16/Umbrella) · **Published CLI:** [`@benjam16/umbrella`](https://www.npmjs.com/package/@benjam16/umbrella)
 
-### Repository documentation
+Umbrella is a **monorepo** that hosts (1) an installable **CLI and long-running agent daemon** with planner → executor → memory, MCP, and optional chat bridges, (2) a **Sovereign Agentic Workstation** desktop + API stack under [`platform/`](./platform), and (3) a small **static marketing site** under [`website/`](./website). This README is the main entry for contributors and users browsing GitHub; deeper references are linked throughout.
 
-| Document | Purpose |
-|----------|---------|
-| [`REPOSITORY.md`](./REPOSITORY.md) | Monorepo map, dev workflows, npm releases, CI |
-| [`CAPABILITIES.md`](./CAPABILITIES.md) | Sovereign workstation (platform) — architecture and API summary |
-| [`SECURITY.md`](./SECURITY.md) | How to report security issues |
-| [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) | Contributing guidelines |
+---
+
+## Table of contents
+
+- [Choose your path](#choose-your-path)
+- [Documentation index](#documentation-index)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [CLI package](#cli-package)
+- [Agent daemon (detailed)](#agent-daemon)
+- [Run in Docker](#run-in-docker)
+- [Platform workstation (preview)](#platform-workstation-preview)
+- [Marketing site](#marketing-site)
+- [Repository layout](#repository-layout)
+- [Contributing, security, and license](#contributing-security-and-license)
+
+---
+
+## Choose your path
+
+| I want to… | Start here |
+|------------|------------|
+| **Use the published CLI** (skills, installer, `umbrella up`) | [CLI package](#cli-package) → [`FEATURES.md`](./FEATURES.md) |
+| **Run or hack the desktop + API** (DAG runs, backups, blueprints) | [`platform/README.md`](./platform/README.md) + [`CAPABILITIES.md`](./CAPABILITIES.md) |
+| **Understand the whole repo** (workflows, CI, releases) | [`REPOSITORY.md`](./REPOSITORY.md) |
+| **Deploy the marketing site** | [`website/deploy-vercel.txt`](./website/deploy-vercel.txt) (set Vercel **Root Directory** to `website`) |
+| **Report a security issue** | [`SECURITY.md`](./SECURITY.md) |
+| **Contribute code** | [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) |
+
+---
+
+## Documentation index
+
+| Document | What you will find |
+|----------|---------------------|
+| [`README.md`](./README.md) (this file) | Overview, badges, navigation, CLI install and daemon behavior |
+| [`REPOSITORY.md`](./REPOSITORY.md) | Monorepo map, dev commands, npm release notes, CI overview |
+| [`CAPABILITIES.md`](./CAPABILITIES.md) | Workstation product story, governance, DR, **API surface summary** |
+| [`FEATURES.md`](./FEATURES.md) | CLI marketing-style feature list, automation ideas, deployment angles |
+| [`ROADMAP.md`](./ROADMAP.md) | Phased roadmap and next steps for the CLI/agent direction |
+| [`platform/README.md`](./platform/README.md) | Platform workspace: API + desktop, env vars, run endpoints |
+| [`platform/.env.example`](./platform/.env.example) | Exhaustive API configuration reference (inference, RBAC, backups, etc.) |
+| [`SECURITY.md`](./SECURITY.md) | Vulnerability reporting |
+| [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) | PR expectations and local checks |
+
+---
+
+## Architecture at a glance
+
+```mermaid
+flowchart TB
+  subgraph npm["npm: @benjam16/umbrella"]
+    CLI[CLI / installer]
+    AGENT[Agent daemon runtime]
+    MCP[MCP tool bridge]
+  end
+
+  subgraph platform["platform/ workspace (private)"]
+    API[Hono API :8787]
+    DESKTOP[Tauri + React desktop]
+    SHARED["@umbrella/shared"]
+    API --- SHARED
+    DESKTOP --- SHARED
+  end
+
+  subgraph web["website/"]
+    SITE[Static marketing site]
+  end
+
+  CLI --> AGENT
+  DESKTOP -->|"HTTP + Bearer"| API
+```
+
+- **CLI root** (`src/`, `modules/`, `runtime/`, `dist/`): TypeScript package published to npm; see [`package.json`](./package.json) `files` and `bin`.
+- **`platform/`**: Not published as a public npm app today; run from source. API defaults to `http://127.0.0.1:8787` unless `PORT` is set.
+- **`website/`**: No Node build step; host as static files.
+
+---
+
+## CLI package
+
+**npm:** [`@benjam16/umbrella`](https://www.npmjs.com/package/@benjam16/umbrella)
+
+> **Workstation users:** the **Tauri + Hono** stack lives under [`platform/`](./platform). A concise capability map is in [`CAPABILITIES.md`](./CAPABILITIES.md). The sections below focus on the **CLI / agent daemon** published as `@benjam16/umbrella`.
 
 **One CLI. One agent. Everything done.**
 
@@ -27,7 +105,7 @@ Install once → get slash-command templates for **Claude Code**, **Cursor**, **
 npx @benjam16/umbrella@latest
 ```
 
-The published package name is **`@benjam16/umbrella`** (your npm username scope). Run `npm publish` while logged in as **benjam16**.
+The published package name is **`@benjam16/umbrella`**. Maintainer releases: bump version in [`package.json`](./package.json), then from the repo root run `npm publish .` (npm 10.9+ requires the `.` path) or `npm run publish:npm`; see [`REPOSITORY.md`](./REPOSITORY.md#releases-cli-on-npm).
 
 Or from a clone:
 
@@ -95,15 +173,63 @@ docker run --rm \
 
 Or: `docker compose up --build` (see `docker-compose.yml`). Copy `.env.umbrella.example` to `.env.umbrella` and pass variables with `-e` / compose `environment:` as you prefer.
 
-### Layout
+---
 
-- `FEATURES.md` — product / capability overview + automation & standalone roadmap
-- `examples/mcp-crypto.servers.json` — starter **stdio** crypto MCP list + `examples/README.md` (+ systemd / launchd samples)
-- `ROADMAP.md` — milestones, slices, and phased **next steps** toward Hermes-tier parity (MCP, learning loop, gateways, Docker, policy)
-- `Dockerfile` / `docker-compose.yml` — agent in a container with persisted `~/.umbrella`
-- `bin/install.js` — copies `modules/*` skills/commands into `~/.umbrella` (or `./.umbrella` with `--local`)
-- `bin/import-skill.js` — copy a `SKILL.md` folder into `~/.umbrella/skills/umb-imported/`
-- `modules/agent-runtime/` — SQLite memory, planner, executor + tool sandbox, Telegram gateway
-- `runtime/index.ts` — heartbeat loop
+## Platform workstation (preview)
 
-MIT License — see `LICENSE`.
+The **`platform/`** directory is an npm workspace (`apps/api`, `apps/desktop`, `packages/shared`) that implements a **local-first workstation**: multi-step runs, credit-metered inference hooks, RBAC, backups and DR endpoints, blueprint gallery, and optional Coinbase/Playwright integrations. It is **not** the same artifact as the npm CLI package.
+
+| Topic | Where to read |
+|-------|----------------|
+| Run API + desktop | [`platform/README.md`](./platform/README.md) |
+| Product + REST map | [`CAPABILITIES.md`](./CAPABILITIES.md) |
+| All API env vars | [`platform/.env.example`](./platform/.env.example) |
+| Repo-wide developer map | [`REPOSITORY.md`](./REPOSITORY.md) |
+
+Quick commands:
+
+```bash
+cd platform && npm install
+npm run dev:api      # API (see apps/api/.env)
+npm run dev:desktop  # Tauri + Vite (Rust required for full Tauri build)
+```
+
+---
+
+## Marketing site
+
+The **`website/`** folder is a **static** site (HTML, CSS, JS, assets). Deploy it with **Root Directory = `website`** on Vercel (or any static host). Step-by-step: [`website/deploy-vercel.txt`](./website/deploy-vercel.txt).
+
+---
+
+## Repository layout
+
+| Path | Role |
+|------|------|
+| [`FEATURES.md`](./FEATURES.md) | CLI-oriented product / capability overview + automation & standalone roadmap |
+| [`examples/`](./examples/) | `mcp-crypto.servers.json`, systemd / launchd samples, shipping CLI template |
+| [`ROADMAP.md`](./ROADMAP.md) | Milestones and phased next steps |
+| [`Dockerfile`](./Dockerfile) / [`docker-compose.yml`](./docker-compose.yml) | Agent in a container with persisted `~/.umbrella` |
+| [`bin/install.js`](./bin/install.js) | Copies `modules/*` skills/commands into `~/.umbrella` (or `./.umbrella` with `--local`) |
+| [`bin/import-skill.js`](./bin/import-skill.js) | Import a `SKILL.md` folder into `~/.umbrella/skills/umb-imported/` |
+| [`modules/agent-runtime/`](./modules/agent-runtime/) | SQLite memory, planner, executor + tool sandbox, Telegram gateway |
+| [`runtime/index.ts`](./runtime/index.ts) | Heartbeat loop entry |
+| [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) | CI: root CLI + `platform` build and API tests |
+
+---
+
+## Contributing, security, and license
+
+- **Contributing:** [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md)
+- **Security:** [`SECURITY.md`](./SECURITY.md)
+- **License:** [MIT](./LICENSE)
+
+### Optional: enrich the GitHub “About” box
+
+On the repository home page, click **⚙** next to **About** and consider adding:
+
+- **Description:** e.g. *Umbrella — CLI agent daemon + Sovereign Agentic Workstation (Tauri/Hono); published as `@benjam16/umbrella`.*
+- **Website:** your Vercel URL or docs site if you have one.
+- **Topics:** e.g. `ai-agent`, `mcp`, `cli`, `typescript`, `tauri`, `hono`, `automation`, `orchestration` (topics are not stored in git; they only appear on GitHub when you set them here).
+
+MIT License — see [`LICENSE`](./LICENSE).
