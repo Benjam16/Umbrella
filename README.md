@@ -6,6 +6,15 @@
 >
 > The rest of this README describes the original **CLI / agent daemon** (`@benjam16/umbrella`), which is a separate product that also lives in this repo.
 
+### Repository documentation
+
+| Document | Purpose |
+|----------|---------|
+| [`REPOSITORY.md`](./REPOSITORY.md) | Monorepo map, dev workflows, npm releases, CI |
+| [`CAPABILITIES.md`](./CAPABILITIES.md) | Sovereign workstation (platform) — architecture and API summary |
+| [`SECURITY.md`](./SECURITY.md) | How to report security issues |
+| [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) | Contributing guidelines |
+
 **One CLI. One agent. Everything done.**
 
 Install once → get slash-command templates for **Claude Code**, **Cursor**, **Gemini CLI**, **OpenAI Codex**-style setups, and other runtimes, plus a 24/7 autonomous agent (planner → executor → memory) with an optional Telegram bridge.
