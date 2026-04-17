@@ -11,6 +11,7 @@
     "test": "tsx --test --test-concurrency=1 src/tests/*.test.ts"
   },
   "dependencies": {
+    "@coinbase/agentkit": "^0.10.4",
     "@hono/node-server": "^1.13.7",
     "@umbrella/shared": "*",
     "dotenv": "^17.4.1",

@@ -20,7 +20,18 @@ startSiteWatchWorker();
 startBackupWorker();
 startBackupIntegrityWorker();
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`Umbrella API listening on http://localhost:${info.port}`);
   console.log(`Data file: ${store.path()}`);
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `[umbrella-api] Port ${PORT} is already in use. Stop the other process (e.g. a duplicate \`npm run dev\`) or set PORT in apps/api/.env.`,
+    );
+  } else {
+    console.error("[umbrella-api] Server error:", err.message);
+  }
+  process.exit(1);
 });
