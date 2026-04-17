@@ -1,0 +1,18 @@
+{
+  "name": "umbrella-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Umbrella desktop + credit-metered API (MVP scaffold)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @umbrella/api",
+    "dev:desktop": "npm run tauri dev -w @umbrella/desktop",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
