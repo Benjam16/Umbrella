@@ -36,7 +36,9 @@
     "dev": "tsx src/cli.ts",
     "install:local": "node bin/install.js --claude --local",
     "agent": "node dist/runtime/index.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "publish:npm": "npm publish .",
+    "publish:npm:dry": "npm publish --dry-run ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
