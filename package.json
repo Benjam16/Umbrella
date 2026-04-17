@@ -1,6 +1,6 @@
 {
   "name": "@benjam16/umbrella",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "One CLI + one autonomous agent that does everything: coding, orchestration, tools, memory, security, and more.",
   "repository": {
     "type": "git",
