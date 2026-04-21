@@ -8,6 +8,12 @@ type Props = {
   blueprints: BlueprintSummary[];
   disabled?: boolean;
   onStart: (input: StartMissionInput) => void;
+  /**
+   * Optional blueprint id to pre-select on mount. Used by the Marketplace →
+   * Workspace handoff so "Back this agent" / "Launch" lands the user directly
+   * on the right blueprint chip.
+   */
+  initialBlueprintId?: string;
 };
 
 type PairedNode = {
@@ -28,8 +34,15 @@ type PairedNode = {
  * required field inline as a secondary input so the hero flow for scrape /
  * recon / sweep is literally a two-field form (goal + URL/repo/topic).
  */
-export function MissionComposer({ blueprints, disabled, onStart }: Props) {
-  const [blueprintId, setBlueprintId] = useState(blueprints[0]?.id ?? "");
+export function MissionComposer({
+  blueprints,
+  disabled,
+  onStart,
+  initialBlueprintId,
+}: Props) {
+  const [blueprintId, setBlueprintId] = useState(
+    initialBlueprintId ?? blueprints[0]?.id ?? "",
+  );
   const [goal, setGoal] = useState("");
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [riskThreshold, setRiskThreshold] = useState(5);
@@ -76,10 +89,20 @@ export function MissionComposer({ blueprints, disabled, onStart }: Props) {
 
   useEffect(() => {
     if (!blueprints.length) return;
+    // Honor an incoming `initialBlueprintId` once the blueprints list has
+    // actually loaded (otherwise the default would win the race).
+    if (
+      initialBlueprintId &&
+      blueprints.some((b) => b.id === initialBlueprintId) &&
+      blueprintId !== initialBlueprintId
+    ) {
+      setBlueprintId(initialBlueprintId);
+      return;
+    }
     if (!blueprints.find((b) => b.id === blueprintId)) {
       setBlueprintId(blueprints[0].id);
     }
-  }, [blueprints, blueprintId]);
+  }, [blueprints, blueprintId, initialBlueprintId]);
 
   const primaryField = blueprint?.inputs[0];
   const extraFields = blueprint?.inputs.slice(1) ?? [];

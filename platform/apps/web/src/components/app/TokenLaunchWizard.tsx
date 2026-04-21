@@ -21,6 +21,17 @@ export type WizardResult = {
 
 type Props = {
   onSubmit?: (result: WizardResult) => Promise<void> | void;
+  /**
+   * Optional seed values. Used by the Marketplace → Forge "Fork this agent"
+   * flow so the wizard opens pre-populated with a public template.
+   */
+  initial?: Partial<{
+    identity: Partial<Identity>;
+    mission: Partial<Mission>;
+    walletAddress: string;
+  }>;
+  /** Small banner rendered above the stepper when the wizard was forked. */
+  contextNotice?: { label: string; detail?: string };
 };
 
 type Step = 1 | 2 | 3;
@@ -44,11 +55,18 @@ function symbolize(raw: string): string {
     .slice(0, 6);
 }
 
-export function TokenLaunchWizard({ onSubmit }: Props) {
+export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
   const [step, setStep] = useState<Step>(1);
-  const [identity, setIdentity] = useState<Identity>({ name: "", symbol: "", imageUrl: "" });
-  const [mission, setMission] = useState<Mission>({ prompt: "", category: "execution" });
-  const [wallet, setWallet] = useState("");
+  const [identity, setIdentity] = useState<Identity>({
+    name: initial?.identity?.name ?? "",
+    symbol: initial?.identity?.symbol ?? "",
+    imageUrl: initial?.identity?.imageUrl ?? "",
+  });
+  const [mission, setMission] = useState<Mission>({
+    prompt: initial?.mission?.prompt ?? "",
+    category: initial?.mission?.category ?? "execution",
+  });
+  const [wallet, setWallet] = useState(initial?.walletAddress ?? "");
   const [showTechnical, setShowTechnical] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -106,6 +124,19 @@ export function TokenLaunchWizard({ onSubmit }: Props) {
           {showTechnical ? "Hide technical" : "View technical details"}
         </button>
       </header>
+
+      {contextNotice && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-signal-blue/30 bg-signal-blue/5 px-3 py-2">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+              {contextNotice.label}
+            </p>
+            {contextNotice.detail && (
+              <p className="text-xs text-zinc-300">{contextNotice.detail}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <StepBar current={step} />
 

@@ -24,6 +24,11 @@ export type PendingLaunch = {
   prompt: string;
   model?: string;
   status: PendingLaunchStatus;
+  /**
+   * Mirrors `generated_hooks.is_public`. Stored locally so the Public badge
+   * on the workspace card persists across refreshes without a round-trip.
+   */
+  isPublic?: boolean;
   error?: string;
   /** ms since epoch — used to sort and to auto-expire stale entries. */
   createdAt: number;
@@ -85,6 +90,14 @@ export function markLaunchReady(
   const idx = list.findIndex((p) => p.id === id || p.hookId === id);
   if (idx < 0) return;
   list[idx] = { ...list[idx], ...patch, status: "ready" };
+  write(list);
+}
+
+export function markLaunchVisibility(id: string, isPublic: boolean): void {
+  const list = read();
+  const idx = list.findIndex((p) => p.id === id || p.hookId === id);
+  if (idx < 0) return;
+  list[idx] = { ...list[idx], isPublic };
   write(list);
 }
 

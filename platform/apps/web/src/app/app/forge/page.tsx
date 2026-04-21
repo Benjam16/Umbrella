@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
@@ -21,13 +21,68 @@ type HookRow = {
   solidity_code: string;
 };
 
+type ForkTemplate = {
+  id: string;
+  prompt: string;
+  model: string;
+};
+
 export default function ForgePage() {
+  return (
+    <Suspense fallback={null}>
+      <ForgeView />
+    </Suspense>
+  );
+}
+
+function ForgeView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const templateId = searchParams?.get("template") ?? null;
   const [wallet, setWallet] = useState("");
   const [hooks, setHooks] = useState<HookRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+  const [template, setTemplate] = useState<ForkTemplate | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const normalizedWallet = useMemo(() => wallet.trim().toLowerCase(), [wallet]);
+
+  // Resolve a `?template=<hookId>` into the initial wizard seed values.
+  // The endpoint returns 404 for private rows, so we just surface a soft
+  // message and let the wizard render empty if that happens.
+  useEffect(() => {
+    if (!templateId) {
+      setTemplate(null);
+      setTemplateError(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/v1/forge/templates/${encodeURIComponent(templateId)}`,
+        );
+        if (!res.ok) {
+          if (!cancelled) setTemplateError("template not found or no longer public");
+          return;
+        }
+        const data = (await res.json()) as { template: ForkTemplate };
+        if (!cancelled) {
+          setTemplate(data.template);
+          setTemplateError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTemplateError(
+            err instanceof Error ? err.message : "failed to load template",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
 
   async function load() {
     if (!/^0x[a-f0-9]{40}$/.test(normalizedWallet)) return;
@@ -134,7 +189,33 @@ export default function ForgePage() {
         </section>
 
         <div className="mx-auto max-w-[1180px] space-y-6 px-6 py-6">
-          <TokenLaunchWizard onSubmit={handleSubmit} />
+          {templateError && (
+            <div className="rounded-lg border border-signal-amber/40 bg-signal-amber/5 px-3 py-2 font-mono text-[11px] text-signal-amber">
+              {templateError}
+            </div>
+          )}
+          <TokenLaunchWizard
+            key={template?.id ?? "blank"}
+            onSubmit={handleSubmit}
+            initial={
+              template
+                ? {
+                    mission: {
+                      prompt: template.prompt,
+                      category: "research",
+                    },
+                  }
+                : undefined
+            }
+            contextNotice={
+              template
+                ? {
+                    label: `Forked from ${template.id.slice(0, 8)}…`,
+                    detail: `Model: ${template.model}. Prompt copied — edit any step before launching.`,
+                  }
+                : undefined
+            }
+          />
 
           <section className="rounded-xl border border-zinc-800 bg-ink-900/60 p-5">
             <header className="flex flex-wrap items-center justify-between gap-3">

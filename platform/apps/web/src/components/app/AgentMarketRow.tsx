@@ -27,6 +27,10 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
   const positive7 = listing.price.change7d >= 0;
   const isElite = listing.performance.successRate >= 0.95;
   const isWeak = listing.performance.successRate < 0.8;
+  // User-forged agents don't yet have a real on-chain pool, so "Back" routes
+  // to the Forge wizard seeded with their public template instead of opening
+  // a TradeDrawer (which would resolve to a 0x0 pool).
+  const isUserForged = listing.blueprintId === "user-forged";
 
   const rowTone = listing.performance.active
     ? "border-l-signal-green/70"
@@ -95,18 +99,28 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
       </div>
 
       <div className="col-span-2 flex items-center justify-end gap-1.5">
-        <button
-          type="button"
-          onClick={() => setTradeOpen(true)}
-          className={`rounded-md border px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
-            positive24
-              ? "border-signal-green/40 bg-signal-green/10 text-signal-green hover:border-signal-green"
-              : "border-signal-blue/40 bg-signal-blue/10 text-signal-blue hover:border-signal-blue"
-          }`}
-        >
-          Back
-        </button>
-        {onLaunch && (
+        {isUserForged ? (
+          <Link
+            href={`/app/forge?template=${encodeURIComponent(listing.id)}`}
+            className="rounded-md border border-signal-blue/40 bg-signal-blue/10 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-signal-blue transition hover:border-signal-blue"
+            title="Fork this public agent into the Forge wizard"
+          >
+            Fork
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setTradeOpen(true)}
+            className={`rounded-md border px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition ${
+              positive24
+                ? "border-signal-green/40 bg-signal-green/10 text-signal-green hover:border-signal-green"
+                : "border-signal-blue/40 bg-signal-blue/10 text-signal-blue hover:border-signal-blue"
+            }`}
+          >
+            Back
+          </button>
+        )}
+        {onLaunch && !isUserForged && (
           <button
             type="button"
             onClick={() => onLaunch(listing)}
@@ -123,11 +137,13 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
         </Link>
       </div>
 
-      <TradeDrawer
-        listing={listing}
-        open={tradeOpen}
-        onClose={() => setTradeOpen(false)}
-      />
+      {!isUserForged && (
+        <TradeDrawer
+          listing={listing}
+          open={tradeOpen}
+          onClose={() => setTradeOpen(false)}
+        />
+      )}
     </div>
   );
 }

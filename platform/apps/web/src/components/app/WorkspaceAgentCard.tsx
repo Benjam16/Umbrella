@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { clearLaunch, type PendingLaunch, type PendingLaunchStatus } from "@/lib/recent-launches";
+import { useCallback, useEffect, useState } from "react";
+import {
+  clearLaunch,
+  markLaunchVisibility,
+  type PendingLaunch,
+  type PendingLaunchStatus,
+} from "@/lib/recent-launches";
 
 type Props = {
   launch: PendingLaunch;
@@ -12,12 +17,16 @@ type Props = {
  *
  * Shows the status chip (Initializing → Forging → Ready → Failed) and, when
  * the agent is Ready, reveals the "Broadcast to Marketplace" toggle that
- * flips `is_public` on the matching `generated_hooks` row. Toggle state is
- * held locally and only posts to /api/v1/forge/hooks/[id] once we have a
- * resolved hookId (i.e. the Supabase insert has confirmed).
+ * flips `is_public` on the matching `generated_hooks` row.
+ *
+ * Persistence:
+ *  - `launch.isPublic` mirrors the server row and is cached in localStorage
+ *    via markLaunchVisibility, so the Public badge survives refresh.
+ *  - On mount (when a hookId is known) we re-hydrate visibility from
+ *    /api/v1/forge/hooks in case the user toggled it from another device.
  */
 export function WorkspaceAgentCard({ launch }: Props) {
-  const [broadcast, setBroadcast] = useState(false);
+  const [broadcast, setBroadcast] = useState<boolean>(!!launch.isPublic);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +34,43 @@ export function WorkspaceAgentCard({ launch }: Props) {
   const ready = launch.status === "ready";
   const canToggle = ready && !!hookId && !saving;
 
-  async function toggle() {
+  // Keep local state in sync if another tab flipped the toggle.
+  useEffect(() => {
+    setBroadcast(!!launch.isPublic);
+  }, [launch.isPublic]);
+
+  // On first resolution of hookId, ask the API whether this row is already
+  // public so the badge doesn't lie after a refresh.
+  useEffect(() => {
+    if (!ready || !hookId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/v1/forge/hooks?wallet=${encodeURIComponent(launch.walletAddress.toLowerCase())}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          hooks?: Array<{ id: string; is_public: boolean }>;
+        };
+        const match = data.hooks?.find((h) => h.id === hookId);
+        if (!match || cancelled) return;
+        if (match.is_public !== broadcast) {
+          setBroadcast(match.is_public);
+          markLaunchVisibility(launch.id, match.is_public);
+        }
+      } catch {
+        /* best-effort hydration */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // intentionally omit `broadcast` so we don't chase our own tail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, hookId, launch.id, launch.walletAddress]);
+
+  const toggle = useCallback(async () => {
     if (!canToggle || !hookId) return;
     const next = !broadcast;
     setSaving(true);
@@ -44,12 +89,13 @@ export function WorkspaceAgentCard({ launch }: Props) {
         throw new Error(body?.error ?? `http ${res.status}`);
       }
       setBroadcast(next);
+      markLaunchVisibility(launch.id, next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed to update visibility");
     } finally {
       setSaving(false);
     }
-  }
+  }, [broadcast, canToggle, hookId, launch.id, launch.walletAddress]);
 
   return (
     <li className="group flex flex-col gap-2 rounded-xl border border-zinc-800/80 bg-ink-950/60 p-3">
@@ -62,7 +108,10 @@ export function WorkspaceAgentCard({ launch }: Props) {
             ${launch.symbol} · {launch.category}
           </p>
         </div>
-        <StatusChip status={launch.status} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          {broadcast && ready && <PublicBadge />}
+          <StatusChip status={launch.status} />
+        </div>
       </div>
 
       <p className="line-clamp-2 text-xs text-zinc-400">{launch.prompt}</p>
@@ -102,9 +151,7 @@ export function WorkspaceAgentCard({ launch }: Props) {
         </div>
       )}
 
-      {error && (
-        <p className="font-mono text-[10px] text-signal-red">{error}</p>
-      )}
+      {error && <p className="font-mono text-[10px] text-signal-red">{error}</p>}
 
       <div className="flex items-center justify-between font-mono text-[10px] text-zinc-500">
         <span>{launch.walletAddress.slice(0, 10)}…</span>
@@ -125,6 +172,18 @@ export function WorkspaceAgentCard({ launch }: Props) {
         <p className="font-mono text-[10px] text-signal-red">{launch.error}</p>
       )}
     </li>
+  );
+}
+
+function PublicBadge() {
+  return (
+    <span
+      title="Broadcast to Marketplace"
+      className="flex items-center gap-1 rounded-full border border-signal-green/40 bg-signal-green/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal-green"
+    >
+      <span className="h-1 w-1 rounded-full bg-signal-green" />
+      Public
+    </span>
   );
 }
 

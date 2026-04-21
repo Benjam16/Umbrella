@@ -225,6 +225,32 @@ export async function setHookPublic(opts: {
  * Deliberately small payload — the full Solidity source is intentionally
  * excluded so clients don't scrape bytecode from the public endpoint.
  */
+/**
+ * Fetch a single public generated hook by id. Returns `null` when the row
+ * does not exist or is not public. Mirrors {@link listPublicHooks} in that
+ * Solidity source and sensitive fields are intentionally not returned.
+ */
+export async function getPublicHookById(
+  id: string,
+): Promise<Pick<
+  GeneratedHookRow,
+  "id" | "wallet_address" | "model" | "prompt" | "created_at"
+> | null> {
+  const supabase = getServerSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .select("id, wallet_address, model, prompt, created_at")
+    .eq("id", id)
+    .eq("is_public", true)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data ?? null) as Pick<
+    GeneratedHookRow,
+    "id" | "wallet_address" | "model" | "prompt" | "created_at"
+  > | null;
+}
+
 export async function listPublicHooks(limit = 50): Promise<
   Array<
     Pick<

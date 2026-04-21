@@ -41,6 +41,9 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
   const isElite = listing.performance.successRate >= 0.95;
   const isWeak = listing.performance.successRate < 0.8;
   const tone: "up" | "down" = isPositive ? "up" : "down";
+  // See AgentMarketRow: user-forged listings don't have a real pool yet, so
+  // the primary action flips from "Back" (TradeDrawer) to "Fork" (Forge wizard).
+  const isUserForged = listing.blueprintId === "user-forged";
 
   const glowRing = isElite
     ? "shadow-[0_0_48px_-14px_rgba(34,211,166,0.45)] border-signal-green/30"
@@ -221,18 +224,28 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
 
         {/* --- actions --- */}
         <div className="mt-1 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setTradeOpen(true)}
-            className={`flex-1 rounded-md border py-2 font-mono text-[11px] uppercase tracking-wider transition ${
-              isPositive
-                ? "border-signal-green/40 bg-signal-green/10 text-signal-green hover:border-signal-green"
-                : "border-signal-blue/40 bg-signal-blue/10 text-signal-blue hover:border-signal-blue"
-            }`}
-          >
-            Back this agent
-          </button>
-          {onLaunch && (
+          {isUserForged ? (
+            <Link
+              href={`/app/forge?template=${encodeURIComponent(listing.id)}`}
+              className="flex-1 rounded-md border border-signal-blue/40 bg-signal-blue/10 py-2 text-center font-mono text-[11px] uppercase tracking-wider text-signal-blue transition hover:border-signal-blue"
+              title="Fork this public agent into the Forge wizard"
+            >
+              Fork this agent
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setTradeOpen(true)}
+              className={`flex-1 rounded-md border py-2 font-mono text-[11px] uppercase tracking-wider transition ${
+                isPositive
+                  ? "border-signal-green/40 bg-signal-green/10 text-signal-green hover:border-signal-green"
+                  : "border-signal-blue/40 bg-signal-blue/10 text-signal-blue hover:border-signal-blue"
+              }`}
+            >
+              Back this agent
+            </button>
+          )}
+          {onLaunch && !isUserForged && (
             <button
               type="button"
               onClick={() => onLaunch(listing)}
@@ -251,11 +264,13 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
         </div>
       </div>
 
-      <TradeDrawer
-        listing={listing}
-        open={tradeOpen}
-        onClose={() => setTradeOpen(false)}
-      />
+      {!isUserForged && (
+        <TradeDrawer
+          listing={listing}
+          open={tradeOpen}
+          onClose={() => setTradeOpen(false)}
+        />
+      )}
     </motion.div>
   );
 }

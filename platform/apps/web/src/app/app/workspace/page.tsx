@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { MissionComposer } from "@/components/app/MissionComposer";
 import { RunArtifactsPanel } from "@/components/app/RunArtifactsPanel";
@@ -14,9 +15,19 @@ import type { BlueprintSummary } from "@/components/WebRunner";
 type StatusTone = "idle" | "running" | "success" | "error" | "blocked";
 
 export default function WorkspacePage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkspaceView />
+    </Suspense>
+  );
+}
+
+function WorkspaceView() {
   const [blueprints, setBlueprints] = useState<BlueprintSummary[]>([]);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const mission = useMissionRun();
+  const searchParams = useSearchParams();
+  const initialBlueprintId = searchParams?.get("blueprint") ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +130,7 @@ export default function WorkspacePage() {
             blueprints={blueprints}
             disabled={running}
             onStart={mission.start}
+            initialBlueprintId={initialBlueprintId}
           />
         </div>
 
