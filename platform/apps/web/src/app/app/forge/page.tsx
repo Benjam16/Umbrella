@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppTopBar } from "@/components/app/AppTopBar";
+import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
 
 type HookRow = {
@@ -17,6 +18,7 @@ export default function ForgePage() {
   const [wallet, setWallet] = useState("");
   const [hooks, setHooks] = useState<HookRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const normalizedWallet = useMemo(() => wallet.trim().toLowerCase(), [wallet]);
 
   async function load() {
@@ -61,41 +63,90 @@ export default function ForgePage() {
     };
   }, [normalizedWallet]);
 
+  async function handleSubmit(result: WizardResult) {
+    setWallet(result.walletAddress);
+    console.info("[forge] wizard submitted", result);
+  }
+
   return (
     <>
       <AppTopBar statusLabel="forge" statusTone="idle" />
-      <main className="min-h-0 flex-1 overflow-auto p-4">
-        <div className="mx-auto max-w-5xl space-y-4">
-          <section className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
-            <h1 className="text-lg font-semibold text-zinc-100">Serverless Forge Output</h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Enter a wallet to watch generated hook code stream in via Supabase Realtime.
+      <main className="flex-1 overflow-y-auto">
+        <section className="border-b border-zinc-800/60 bg-gradient-to-b from-signal-blue/[0.06] to-transparent">
+          <div className="mx-auto max-w-[1180px] px-6 py-8">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+              Umbrella · Forge
             </p>
-            <input
-              className="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-200 outline-none"
-              placeholder="0x..."
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-            />
-          </section>
+            <h1 className="mt-2 text-3xl font-semibold text-zinc-100">
+              Launch your agent token in 3 steps
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm text-zinc-400">
+              The guided wizard keeps launching simple. Umbrella handles payment
+              verification, Solidity generation, and artifact streaming automatically.
+              Advanced users can expand the technical panel at any step.
+            </p>
+          </div>
+        </section>
 
-          {loading && <p className="text-sm text-zinc-400">Loading...</p>}
+        <div className="mx-auto max-w-[1180px] space-y-6 px-6 py-6">
+          <TokenLaunchWizard onSubmit={handleSubmit} />
 
-          {hooks.map((h) => (
-            <article key={h.id} className="rounded-xl border border-zinc-800 bg-ink-900/60 p-4">
-              <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400">
-                <span>{new Date(h.created_at).toLocaleString()}</span>
-                <span>{h.model}</span>
-                <span className="font-mono">{h.tx_hash.slice(0, 12)}...</span>
+          <section className="rounded-xl border border-zinc-800 bg-ink-900/60 p-5">
+            <header className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-100">Generated Artifacts</h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Live stream via Supabase Realtime. Enter or launch with a wallet to see
+                  artifacts appear here.
+                </p>
               </div>
-              <pre className="max-h-[360px] overflow-auto rounded-lg bg-zinc-950 p-3 text-xs text-zinc-200">
-                {h.solidity_code}
-              </pre>
-            </article>
-          ))}
+              <div className="flex items-center gap-2">
+                <input
+                  placeholder="0x wallet to track"
+                  value={wallet}
+                  onChange={(e) => setWallet(e.target.value)}
+                  className="w-60 rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 font-mono text-xs text-zinc-100 outline-none focus:border-signal-blue"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRaw((v) => !v)}
+                  className="rounded-md border border-zinc-700 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-zinc-300 hover:border-signal-blue hover:text-signal-blue"
+                >
+                  {showRaw ? "Hide source" : "View source"}
+                </button>
+              </div>
+            </header>
+
+            {loading && <p className="mt-4 text-sm text-zinc-400">Loading...</p>}
+
+            {!loading && hooks.length === 0 && (
+              <p className="mt-4 rounded-md border border-dashed border-zinc-800 p-4 text-sm text-zinc-500">
+                No artifacts yet. Complete a launch to populate this feed.
+              </p>
+            )}
+
+            <div className="mt-4 space-y-3">
+              {hooks.map((h) => (
+                <article
+                  key={h.id}
+                  className="rounded-lg border border-zinc-800 bg-ink-950/80 p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
+                    <span>{new Date(h.created_at).toLocaleString()}</span>
+                    <span>{h.model}</span>
+                    <span className="font-mono">{h.tx_hash.slice(0, 12)}...</span>
+                  </div>
+                  {showRaw && (
+                    <pre className="mt-3 max-h-[360px] overflow-auto rounded-md bg-ink-900 p-3 text-xs text-zinc-200">
+                      {h.solidity_code}
+                    </pre>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
     </>
   );
 }
-

@@ -7,11 +7,13 @@ import { LocalNodeStatus } from "@/components/LocalNodeStatus";
 import { loadRecentRuns, type RecentRun } from "@/lib/recent-runs";
 
 const NAV: Array<{ href: string; label: string; key: string }> = [
-  { href: "/app", label: "Terminal", key: "terminal" },
+  { href: "/app", label: "Launchpad", key: "launchpad" },
+  { href: "/app/marketplace", label: "Marketplace", key: "marketplace" },
+  { href: "/app/workspace", label: "Workspace", key: "workspace" },
   { href: "/app/runs", label: "Runs", key: "runs" },
   { href: "/app/forge", label: "Forge", key: "forge" },
-  { href: "/app/marketplace", label: "Marketplace", key: "marketplace" },
   { href: "/app/nodes", label: "Nodes", key: "nodes" },
+  { href: "/docs", label: "Docs", key: "docs" },
   { href: "/app/settings", label: "Settings", key: "settings" },
 ];
 

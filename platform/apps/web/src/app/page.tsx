@@ -40,32 +40,35 @@ export default function HomePage() {
       <header className="relative z-10 mx-auto max-w-6xl px-4 pt-10 sm:pt-14">
         <Reveal>
           <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-signal-sepia">
-            Umbrella · Agentic OS
+            Umbrella · Autonomous Launchpad
           </p>
           <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
-            An agent that <span className="ink-accent text-signal-sepia">stays dry</span> in
-            the rain.
+            Launch tokens, deploy swarms, and run your{" "}
+            <span className="ink-accent text-signal-sepia">agent workforce</span>.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-            Umbrella is a sovereign desktop runner: a{" "}
-            <span className="text-zinc-200">simulated planner</span>, a{" "}
-            <span className="text-zinc-200">shadow DAG</span>, a{" "}
-            <span className="text-zinc-200">live playground terminal</span>, and
-            policy-gated <span className="text-zinc-200">DR snapshots</span> — drawn with
-            ink, wired like a HUD.
+            Umbrella combines a non-technical launch flow with a high-density Agent OS.
+            Start with guided token + agent launch, then drop into the workspace for live
+            DAG control, mission telemetry, and swarm orchestration.
           </p>
           <div className="mt-7 flex flex-wrap gap-3 text-sm">
             <Link
               href="/app"
               className="rounded-xl bg-signal-blue px-5 py-2.5 font-semibold text-ink-950 shadow-lg shadow-signal-blue/20 transition hover:bg-signal-blue/90"
             >
-              Open workspace →
+              Open launchpad →
             </Link>
             <Link
-              href="#playground"
+              href="/app/marketplace"
               className="rounded-xl border border-signal-blue/40 bg-signal-blue/10 px-5 py-2.5 font-medium text-signal-blue backdrop-blur-sm hover:border-signal-blue"
             >
-              Sandbox demo ↓
+              Explore marketplace
+            </Link>
+            <Link
+              href="/docs"
+              className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-5 py-2.5 font-medium text-zinc-200 backdrop-blur-sm hover:border-signal-blue/40"
+            >
+              Docs
             </Link>
             <Link
               href="https://github.com/Benjam16/Umbrella"
@@ -93,7 +96,51 @@ export default function HomePage() {
       </header>
 
       <main className="relative z-10 mx-auto mt-14 max-w-6xl px-4">
-        {/* Hero row */}
+        <section className="rounded-2xl border border-zinc-800/60 bg-ink-900/40 p-6">
+          <Reveal>
+            <SectionHeading
+              eyebrow="launchpad"
+              title={
+                <>
+                  Built for non-technical founders and{" "}
+                  <span className="ink-accent text-signal-sepia">advanced operators</span>
+                </>
+              }
+              subtitle="Use the 3-step launch flow for token + agent creation, then switch into Workspace for detailed swarm control and run operations."
+            />
+          </Reveal>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-xl border border-zinc-800 bg-ink-950/50 p-4">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+                Step 1
+              </p>
+              <h3 className="mt-1 text-sm font-semibold text-zinc-100">Token Identity</h3>
+              <p className="mt-2 text-xs text-zinc-400">
+                Choose name, symbol, and branding in a guided wizard.
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-ink-950/50 p-4">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+                Step 2
+              </p>
+              <h3 className="mt-1 text-sm font-semibold text-zinc-100">Agent Mission</h3>
+              <p className="mt-2 text-xs text-zinc-400">
+                Describe what your agent does in plain language.
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-ink-950/50 p-4">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+                Step 3
+              </p>
+              <h3 className="mt-1 text-sm font-semibold text-zinc-100">Forge & Launch</h3>
+              <p className="mt-2 text-xs text-zinc-400">
+                Deploy through Umbrella pipeline and route to the marketplace.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Workspace row (moved lower in hierarchy) */}
         <section className="grid grid-cols-12 gap-4 lg:gap-5">
           <Reveal className="col-span-12 lg:col-span-7">
             <HeroTerminal command={demoData.heroCommand} logs={demoData.heroLogs} />
