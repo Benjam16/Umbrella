@@ -1,0 +1,195 @@
+{
+  "heroCommand": "umbrella launch \"Research competitors and mint a strategy on Base\"",
+  "mission": {
+    "title": "Market intelligence → Base strategy",
+    "objective": "Research top competitors, synthesize positioning, draft on-chain mint parameters."
+  },
+  "heroLogs": [
+    "[supervisor] Pre-flight: mission class = growth + chain touchpoint",
+    "[supervisor] Planner: emitting DAG (7 tasks, 3 parallel lanes)",
+    "[runner] CHECKPOINT ok → branch umbrella/mission-7f3a",
+    "[worker:SCRAPER] SCRAPE queued (risk 4/10)",
+    "[worker:CODER] VERIFY after FILE_WRITE (self-heal bound = 5)",
+    "[wallet] TX proposal staged → BLOCKED_FOR_SIGNATURE (risk 10/10)"
+  ],
+  "dag": {
+    "nodes": [
+      { "id": "t1", "label": "Plan", "worker": "SUPERVISOR", "x": 8, "y": 42 },
+      { "id": "t2", "label": "Scrape", "worker": "SCRAPER", "x": 28, "y": 18 },
+      { "id": "t3", "label": "Scrape B", "worker": "SCRAPER", "x": 28, "y": 66 },
+      { "id": "t4", "label": "Code", "worker": "CODER", "x": 52, "y": 42 },
+      { "id": "t5", "label": "Verify", "worker": "AUDITOR", "x": 76, "y": 42 },
+      { "id": "t6", "label": "Mint", "worker": "SUPERVISOR", "x": 92, "y": 42 }
+    ],
+    "edges": [
+      { "from": "t1", "to": "t2" },
+      { "from": "t1", "to": "t3" },
+      { "from": "t2", "to": "t4" },
+      { "from": "t3", "to": "t4" },
+      { "from": "t4", "to": "t5" },
+      { "from": "t5", "to": "t6" }
+    ]
+  },
+  "toolActions": [
+    { "id": "a1", "tool": "run_command", "risk": 4, "detail": "curl -s competitor pricing feed" },
+    { "id": "a2", "tool": "write_file_patch", "risk": 6, "detail": "packages/strategy/src/positioning.ts" },
+    { "id": "a3", "tool": "run_command", "risk": 8, "detail": "docker compose -f stack.prod.yml up -d --build" },
+    { "id": "a4", "tool": "propose_transaction", "risk": 10, "detail": "Base · mint strategy capsule (value set on approve)" }
+  ],
+  "selfHealSnippet": {
+    "fail": "FAIL: AssertionError: expected 204, got 500",
+    "fix": "PATCH auth/middleware.ts — stale tenant cache invalidated",
+    "pass": "PASS: npm test (12 files, 48 tests)"
+  },
+  "ceoBriefing": "• Competitors cluster on price; differentiation is **latency + custody** — own the \"sovereign desk\" narrative.\n• Ship a **checkpointed** Base mint path: policy gate at 7/10, human signature above 7, integrity hash on snapshots.\n• Next 14 days: one public case study (redacted) + DR drill with restore token handshake.",
+  "capabilities": [
+    {
+      "id": "plan",
+      "title": "Planner → DAG",
+      "summary": "Decomposes a mission into a checkpointed DAG with parallel lanes and explicit policy gates.",
+      "accent": "blue"
+    },
+    {
+      "id": "self-heal",
+      "title": "Self-heal loop",
+      "summary": "Bounded retries with AUDITOR verify; every FILE_WRITE is followed by a re-run or revert.",
+      "accent": "green"
+    },
+    {
+      "id": "risk",
+      "title": "Risk governance",
+      "summary": "Every tool call has a 1–10 risk score; threshold is user-owned, blocks propose-only above the line.",
+      "accent": "amber"
+    },
+    {
+      "id": "swarm",
+      "title": "Swarm orchestration",
+      "summary": "Scraper / coder / auditor / supervisor workers coordinated by a single supervisor with shared DAG.",
+      "accent": "blue"
+    },
+    {
+      "id": "integrity",
+      "title": "Integrity & DR",
+      "summary": "Snapshots per checkpoint, content-addressed, with a GET /v1/health/dr surface for trust UX.",
+      "accent": "green"
+    },
+    {
+      "id": "chain",
+      "title": "Chain-aware actions",
+      "summary": "Wallet proposals are staged — never auto-submitted above threshold. Signature is always yours.",
+      "accent": "red"
+    }
+  ],
+  "architecture": [
+    {
+      "id": "desktop",
+      "title": "Desktop shell",
+      "role": "UX / project picker / approvals",
+      "stack": "Tauri 2 · React 19",
+      "accent": "blue"
+    },
+    {
+      "id": "api",
+      "title": "Credits + policy API",
+      "role": "Auth, ledger, entitlements, 402",
+      "stack": "Hono · Node 20",
+      "accent": "amber"
+    },
+    {
+      "id": "inference",
+      "title": "Inference workers",
+      "role": "Gemma-class model serving",
+      "stack": "vLLM / NIM",
+      "accent": "green"
+    },
+    {
+      "id": "settlement",
+      "title": "Settlement",
+      "role": "Stripe fiat + optional chain top-up",
+      "stack": "Stripe · Base (later)",
+      "accent": "red"
+    }
+  ],
+  "pricing": [
+    {
+      "id": "hacker",
+      "name": "Hacker",
+      "price": "$0",
+      "tagline": "Try the local runner.",
+      "features": [
+        "Simulated runner + DAG",
+        "Policy slider, self-heal demo",
+        "Community Discord"
+      ],
+      "cta": "Download CLI"
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "price": "$20/mo",
+      "tagline": "Hosted Umbrella for real work.",
+      "features": [
+        "Hosted Gemma-class inference",
+        "Master task + sub-objective queue",
+        "DR snapshots / policy caps",
+        "Stripe → credits"
+      ],
+      "cta": "Start Pro",
+      "highlight": true
+    },
+    {
+      "id": "power",
+      "name": "Power user",
+      "price": "metered",
+      "tagline": "Heavy autonomous loops.",
+      "features": [
+        "Usage billing above Pro cap",
+        "Optional UMBRELLA top-up",
+        "Priority sandbox + higher limits"
+      ],
+      "cta": "Contact"
+    }
+  ],
+  "roadmap": [
+    {
+      "id": "v1",
+      "phase": "V1",
+      "label": "Cursor-grade desktop",
+      "items": ["Tauri shell", "Credit-metered API", "Hosted inference", "Sandboxed tools"]
+    },
+    {
+      "id": "v2",
+      "phase": "V2",
+      "label": "Agentic economy",
+      "items": ["Stripe webhooks → credits", "Standards-based payment challenges", "Ledger hardening"]
+    },
+    {
+      "id": "v3",
+      "phase": "V3",
+      "label": "Sovereign swarm",
+      "items": ["Local-first privacy", "BYO compute / VPS", "Treasury-level buy/burn policy"]
+    }
+  ],
+  "faq": [
+    {
+      "id": "why-not-cursor",
+      "q": "Why Umbrella if I already use Cursor / Claude Code?",
+      "a": "Cursor is a reactive editor. Umbrella is a long-horizon runner: master task, sub-objectives, policy gates, and checkpoints. It's a different job."
+    },
+    {
+      "id": "privacy",
+      "q": "Where does my code go?",
+      "a": "Hosted inference is tenant-isolated and bounded by explicit tool permissions. Local/BYO-compute modes are on the roadmap for users who need it."
+    },
+    {
+      "id": "token",
+      "q": "Do I need tokens to use it?",
+      "a": "No. Stripe covers the normal path. UMBRELLA top-ups are optional and only touch a narrow, documented surface."
+    },
+    {
+      "id": "safety",
+      "q": "How do you stop runaway loops?",
+      "a": "Per-user daily caps, per-task token budgets, and a policy threshold that blocks high-risk tool calls until you approve."
+    }
+  ]
+}

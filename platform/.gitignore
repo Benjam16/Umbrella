@@ -2,8 +2,8 @@ node_modules/
 dist/
 .next/
 .turbo/
-data/
 apps/api/data/
+apps/api/config/data/
 *.log
 .env
 .env.local
