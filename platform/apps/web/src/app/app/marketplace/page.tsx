@@ -4,18 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgentMarketCard } from "@/components/app/AgentMarketCard";
+import { AgentMarketRow } from "@/components/app/AgentMarketRow";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import {
   CATEGORIES,
   SORTS,
   formatUsd,
   formatNumber,
+  formatPct,
   seedMarketplace,
   sortListings,
   type AgentCategory,
   type AgentListing,
   type SortKey,
 } from "@/lib/marketplace";
+
+type Density = "grid" | "list";
 
 /**
  * The Umbrella Marketplace — a Bloomberg-style grid of labor-backed agent
@@ -35,6 +39,7 @@ export default function MarketplacePage() {
   const [category, setCategory] = useState<AgentCategory | "all">("all");
   const [sort, setSort] = useState<SortKey>("momentum");
   const [query, setQuery] = useState("");
+  const [density, setDensity] = useState<Density>("grid");
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +76,16 @@ export default function MarketplacePage() {
       category === "all" ? byQuery : byQuery.filter((l) => l.category === category);
     return sortListings(byCategory, sort);
   }, [listings, category, sort, query]);
+
+  const topEarners = useMemo(
+    () =>
+      [...listings]
+        .sort(
+          (a, b) => b.performance.revenue24hUsd - a.performance.revenue24hUsd,
+        )
+        .slice(0, 6),
+    [listings],
+  );
 
   const aggregates = useMemo(() => {
     const agg = {
@@ -145,6 +160,38 @@ export default function MarketplacePage() {
               />
             </div>
           </div>
+
+          {/* --- top earners tape --- */}
+          <div className="border-t border-zinc-800/60 bg-ink-950/60">
+            <div className="mx-auto flex max-w-[1280px] items-center gap-6 overflow-x-auto px-6 py-2 font-mono text-[11px] text-zinc-400">
+              <span className="shrink-0 uppercase tracking-widest text-zinc-500">
+                top earners 24h
+              </span>
+              {topEarners.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => router.push(`/app/marketplace/${l.id}`)}
+                  className="flex shrink-0 items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-ink-900/80"
+                  title={`${l.name} · ${formatUsd(l.performance.revenue24hUsd, { compact: true })} 24h revenue`}
+                >
+                  <span className="text-zinc-200">{l.symbol}</span>
+                  <span
+                    className={
+                      l.price.change24h >= 0
+                        ? "text-signal-green"
+                        : "text-signal-red"
+                    }
+                  >
+                    {formatPct(l.price.change24h)}
+                  </span>
+                  <span className="text-zinc-500">
+                    {formatUsd(l.performance.revenue24hUsd, { compact: true })}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* --- filters --- */}
@@ -172,6 +219,22 @@ export default function MarketplacePage() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <div className="flex overflow-hidden rounded-md border border-zinc-800">
+                {(["grid", "list"] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDensity(d)}
+                    className={`px-2 py-1 font-mono text-[10px] uppercase tracking-widest transition ${
+                      density === d
+                        ? "bg-signal-blue/20 text-signal-blue"
+                        : "bg-ink-900 text-zinc-500 hover:text-zinc-200"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -210,13 +273,30 @@ export default function MarketplacePage() {
                 Clear filters
               </button>
             </div>
-          ) : (
+          ) : density === "grid" ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <AnimatePresence mode="popLayout">
                 {filtered.map((l) => (
                   <AgentMarketCard key={l.id} listing={l} onLaunch={launch} />
                 ))}
               </AnimatePresence>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-zinc-800/80 bg-ink-900/40">
+              <div className="grid grid-cols-12 gap-3 border-b border-zinc-800 bg-ink-950/70 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                <span className="col-span-3">Agent</span>
+                <span className="col-span-1 text-right">Price</span>
+                <span className="col-span-1 text-right">24h</span>
+                <span className="col-span-1 text-right">7d</span>
+                <span className="col-span-1 text-right">Rev 24h</span>
+                <span className="col-span-1 text-right">Missions</span>
+                <span className="col-span-1 text-right">Success</span>
+                <span className="col-span-1 text-right">Chart</span>
+                <span className="col-span-2 text-right">Actions</span>
+              </div>
+              {filtered.map((l) => (
+                <AgentMarketRow key={l.id} listing={l} onLaunch={launch} />
+              ))}
             </div>
           )}
 

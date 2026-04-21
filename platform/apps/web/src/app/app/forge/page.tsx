@@ -65,7 +65,15 @@ export default function ForgePage() {
 
   async function handleSubmit(result: WizardResult) {
     setWallet(result.walletAddress);
-    console.info("[forge] wizard submitted", result);
+    const res = await fetch("/api/v1/forge/launch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "launch failed" }));
+      throw new Error(err?.error ?? "launch failed");
+    }
   }
 
   return (
