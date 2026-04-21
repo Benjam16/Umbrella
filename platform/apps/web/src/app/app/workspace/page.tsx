@@ -6,6 +6,7 @@ import { AppTopBar } from "@/components/app/AppTopBar";
 import { MissionComposer } from "@/components/app/MissionComposer";
 import { RunArtifactsPanel } from "@/components/app/RunArtifactsPanel";
 import { LiveDag } from "@/components/LiveDag";
+import { LaunchReplayPanel } from "@/components/app/LaunchReplayPanel";
 import { EjectButton } from "@/components/EjectButton";
 import { useMissionRun } from "@/lib/useMissionRun";
 import type { BlueprintSummary } from "@/components/WebRunner";
@@ -97,6 +98,7 @@ export default function WorkspacePage() {
 
       <main className="flex min-h-0 flex-1 gap-4 p-4">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <LaunchReplayPanel />
           <div className="relative flex-1 overflow-hidden rounded-2xl border border-zinc-800/80 bg-ink-900/70">
             {mission.plan.length > 0 ? (
               <LiveDag plan={mission.plan} statuses={mission.statuses} />

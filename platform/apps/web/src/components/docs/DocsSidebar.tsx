@@ -13,6 +13,7 @@ const SECTIONS: Section[] = [
     title: "Getting Started",
     items: [
       { href: "/docs", label: "Introduction" },
+      { href: "/docs/vision", label: "Vision" },
       { href: "/docs/quickstart", label: "Quickstart" },
       { href: "/docs/concepts", label: "Core concepts" },
     ],

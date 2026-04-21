@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
+import {
+  markLaunchError,
+  markLaunchReady,
+  newLaunchId,
+  upsertPendingLaunch,
+} from "@/lib/recent-launches";
 
 type HookRow = {
   id: string;
@@ -15,6 +22,7 @@ type HookRow = {
 };
 
 export default function ForgePage() {
+  const router = useRouter();
   const [wallet, setWallet] = useState("");
   const [hooks, setHooks] = useState<HookRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,14 +73,43 @@ export default function ForgePage() {
 
   async function handleSubmit(result: WizardResult) {
     setWallet(result.walletAddress);
-    const res = await fetch("/api/v1/forge/launch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result),
+
+    // Stash an optimistic "Initializing..." card and jump to the workspace
+    // immediately — the user shouldn't have to wait on Kimi to feel progress.
+    const launchId = newLaunchId();
+    upsertPendingLaunch({
+      id: launchId,
+      walletAddress: result.walletAddress,
+      name: result.identity.name,
+      symbol: result.identity.symbol,
+      category: result.mission.category,
+      prompt: result.mission.prompt,
+      status: "initializing",
+      createdAt: Date.now(),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "launch failed" }));
-      throw new Error(err?.error ?? "launch failed");
+    router.push("/app/workspace");
+
+    try {
+      const res = await fetch("/api/v1/forge/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "launch failed" }));
+        throw new Error(err?.error ?? "launch failed");
+      }
+      const data = (await res.json()) as {
+        hook?: { id?: string; model?: string };
+      };
+      markLaunchReady(launchId, {
+        hookId: data.hook?.id,
+        model: data.hook?.model,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "launch failed";
+      markLaunchError(launchId, msg);
+      throw err instanceof Error ? err : new Error(msg);
     }
   }
 

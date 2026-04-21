@@ -1,0 +1,15 @@
+feat(web): vision doc + Instant Workspace Replay
+
+- Add /docs/vision — the "Agentic Sovereign Layer" vision page with the
+  Umbrella-vs-Bankr swarm comparison table and the three-pillar narrative.
+  Link it from the Getting Started section of the docs sidebar.
+- New lib/recent-launches: localStorage-backed store for pending Forge
+  launches with a usePendingLaunches hook that stays in sync across tabs.
+- New LaunchReplayPanel component mounted above the DAG in /app/workspace.
+  Shows every pending launch as an Initializing/Forging/Ready/Failed card
+  and subscribes to Supabase Realtime so launches flip to Ready the moment
+  the generated_hooks row lands.
+- Forge wizard handleSubmit now stashes an optimistic pending launch and
+  immediately routes the user to /app/workspace. The /api/v1/forge/launch
+  POST continues in the background and resolves the card to Ready (or
+  Failed) when it returns.
