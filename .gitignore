@@ -5,6 +5,7 @@ dist
 .DS_Store
 *.log
 *.tgz
+.commit-msg.tmp
 .planning/
 .umbrella/
 test-home/
