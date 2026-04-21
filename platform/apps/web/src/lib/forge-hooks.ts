@@ -12,6 +12,7 @@ export type GeneratedHookRow = {
   solidity_code: string;
   model: string;
   status: string;
+  is_public: boolean;
   created_at: string;
 };
 
@@ -181,5 +182,71 @@ export async function listGeneratedHooks(walletAddress: string, limit = 20): Pro
     .limit(limit);
   if (error) throw new Error(error.message);
   return (data ?? []) as GeneratedHookRow[];
+}
+
+/**
+ * Flip the `is_public` flag on a generated hook. The wallet must match the
+ * row owner — this is a pre-auth safeguard until we wire signed sessions.
+ *
+ * Returns the updated row so clients can echo the new state back into their
+ * workspace cache without re-fetching.
+ */
+export async function setHookPublic(opts: {
+  hookId: string;
+  walletAddress: string;
+  isPublic: boolean;
+}): Promise<GeneratedHookRow> {
+  const supabase = getServerSupabase();
+  if (!supabase) throw new Error("supabase not configured");
+  const wallet = opts.walletAddress.toLowerCase();
+
+  const { data: existing, error: readError } = await supabase
+    .from("generated_hooks")
+    .select("*")
+    .eq("id", opts.hookId)
+    .single();
+  if (readError || !existing) throw new Error(readError?.message ?? "hook not found");
+  if ((existing as GeneratedHookRow).wallet_address.toLowerCase() !== wallet) {
+    throw new Error("wallet does not own this hook");
+  }
+
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .update({ is_public: opts.isPublic })
+    .eq("id", opts.hookId)
+    .select("*")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "failed to update visibility");
+  return data as GeneratedHookRow;
+}
+
+/**
+ * Marketplace-facing feed: only rows the creator has opted to broadcast.
+ * Deliberately small payload — the full Solidity source is intentionally
+ * excluded so clients don't scrape bytecode from the public endpoint.
+ */
+export async function listPublicHooks(limit = 50): Promise<
+  Array<
+    Pick<
+      GeneratedHookRow,
+      "id" | "wallet_address" | "model" | "prompt" | "created_at"
+    >
+  >
+> {
+  const supabase = getServerSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .select("id, wallet_address, model, prompt, created_at")
+    .eq("is_public", true)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<
+    Pick<
+      GeneratedHookRow,
+      "id" | "wallet_address" | "model" | "prompt" | "created_at"
+    >
+  >;
 }
 
