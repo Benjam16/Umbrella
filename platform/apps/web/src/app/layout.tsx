@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Caveat, Geist, Geist_Mono } from "next/font/google";
 import { RainOverlay } from "@/components/RainOverlay";
+import { WalletProvider } from "@/components/wallet/WalletProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,7 +41,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="font-sans text-crisp">
         <RainOverlay />
-        <div className="relative z-10">{children}</div>
+        <WalletProvider>
+          <div className="relative z-10">{children}</div>
+        </WalletProvider>
       </body>
     </html>
   );

@@ -1,5 +1,6 @@
 import { ArchitectureStack } from "@/components/ArchitectureStack";
 import { CapabilitiesGrid } from "@/components/CapabilitiesGrid";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { CeoBriefingTile } from "@/components/CeoBriefingTile";
 import { DrHealthBar } from "@/components/DrHealthBar";
 import { FaqAccordion } from "@/components/FaqAccordion";
@@ -38,6 +39,24 @@ export default function HomePage() {
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[70vh] hero-haze" />
 
       <header className="relative z-10 mx-auto max-w-6xl px-4 pt-10 sm:pt-14">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+            <span className="text-signal-blue">☂</span>
+            <span>Umbrella</span>
+          </Link>
+          <nav className="flex items-center gap-3 text-xs">
+            <Link href="/app" className="text-zinc-300 hover:text-signal-blue">
+              Launchpad
+            </Link>
+            <Link href="/app/marketplace" className="text-zinc-300 hover:text-signal-blue">
+              Marketplace
+            </Link>
+            <Link href="/docs" className="text-zinc-300 hover:text-signal-blue">
+              Docs
+            </Link>
+            <ConnectWalletButton />
+          </nav>
+        </div>
         <Reveal>
           <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-signal-sepia">
             Umbrella · Autonomous Launchpad

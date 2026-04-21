@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppTopBar } from "@/components/app/AppTopBar";
 import { MarketSparkline } from "@/components/app/MarketSparkline";
 import { TradeDrawer } from "@/components/app/TradeDrawer";
 import {
   formatNumber,
   formatPct,
   formatUsd,
-  seedMarketplace,
   timeAgo,
   type AgentListing,
 } from "@/lib/marketplace";
@@ -28,8 +26,24 @@ export default function AgentProfilePage() {
   const [tradeOpen, setTradeOpen] = useState(false);
 
   useEffect(() => {
-    const match = seedMarketplace().find((l) => l.id === params.agentId) ?? null;
-    setListing(match);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/marketplace", { cache: "no-store" });
+        if (!res.ok) {
+          if (!cancelled) setListing(null);
+          return;
+        }
+        const data = (await res.json()) as { listings: AgentListing[] };
+        const match = data.listings.find((l) => l.id === params.agentId) ?? null;
+        if (!cancelled) setListing(match);
+      } catch {
+        if (!cancelled) setListing(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [params.agentId]);
 
   if (listing === null) notFound();
@@ -39,10 +53,6 @@ export default function AgentProfilePage() {
 
   return (
     <>
-      <AppTopBar
-        statusLabel={listing.performance.active ? "Agent executing" : "Agent idle"}
-        statusTone={listing.performance.active ? "running" : "idle"}
-      />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1100px] px-6 py-6">
           <Link

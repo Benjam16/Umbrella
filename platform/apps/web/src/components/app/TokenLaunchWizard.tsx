@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAccount } from "wagmi";
 
 type Identity = {
   name: string;
@@ -67,6 +68,18 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
     category: initial?.mission?.category ?? "execution",
   });
   const [wallet, setWallet] = useState(initial?.walletAddress ?? "");
+  const { address: connectedAddress, isConnected } = useAccount();
+  const [walletTouched, setWalletTouched] = useState(
+    Boolean(initial?.walletAddress),
+  );
+
+  // Auto-fill from the connected wallet — but only if the user hasn't typed
+  // their own value yet (so manually entered treasuries aren't overwritten).
+  useEffect(() => {
+    if (walletTouched) return;
+    if (isConnected && connectedAddress) setWallet(connectedAddress);
+  }, [isConnected, connectedAddress, walletTouched]);
+
   const [showTechnical, setShowTechnical] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -155,7 +168,13 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
           {step === 3 && (
             <StepForge
               wallet={wallet}
-              setWallet={setWallet}
+              setWallet={(v) => {
+                setWalletTouched(true);
+                setWallet(v);
+              }}
+              walletAutoFilled={
+                isConnected && wallet === connectedAddress && !walletTouched
+              }
               identity={identity}
               mission={mission}
               valid={validStep3}
@@ -343,6 +362,7 @@ function StepMission({
 function StepForge({
   wallet,
   setWallet,
+  walletAutoFilled,
   identity,
   mission,
   valid,
@@ -353,6 +373,7 @@ function StepForge({
 }: {
   wallet: string;
   setWallet: (v: string) => void;
+  walletAutoFilled?: boolean;
   identity: Identity;
   mission: Mission;
   valid: boolean;
@@ -363,13 +384,27 @@ function StepForge({
 }) {
   return (
     <div className="space-y-4">
-      <Field label="Your Wallet" hint="Used to key generated artifacts via Supabase Realtime">
-        <input
-          value={wallet}
-          onChange={(e) => setWallet(e.target.value)}
-          placeholder="0x..."
-          className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-signal-blue"
-        />
+      <Field
+        label="Your Wallet"
+        hint={
+          walletAutoFilled
+            ? "Auto-filled from your connected wallet. Edit to override."
+            : "Used to key generated artifacts via Supabase Realtime"
+        }
+      >
+        <div className="relative">
+          <input
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+            placeholder="0x..."
+            className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 pr-20 font-mono text-sm text-zinc-100 outline-none focus:border-signal-blue"
+          />
+          {walletAutoFilled && (
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-signal-green/40 bg-signal-green/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal-green">
+              connected
+            </span>
+          )}
+        </div>
       </Field>
 
       <div className="rounded-lg border border-zinc-800 bg-ink-950/60 p-4">

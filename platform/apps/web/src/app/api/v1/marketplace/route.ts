@@ -1,5 +1,5 @@
 import { listPublicHooks } from "@/lib/forge-hooks";
-import { seedMarketplace, type AgentListing } from "@/lib/marketplace";
+import type { AgentListing } from "@/lib/marketplace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,48 +7,40 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/v1/marketplace
  *
- * Returns the current snapshot of labor-backed agent tokens:
- * - Deterministic seed listings (shown first) — provide stable design fixtures
- *   and act as the "showcase" row when there are no user broadcasts yet.
- * - Opt-in public generated_hooks rows — users flip the "Broadcast to
- *   Marketplace" toggle in /app/workspace to surface them here.
+ * Real data only: returns listings derived from `generated_hooks` where the
+ * creator has flipped `is_public = true`. No seeded demo rows.
  *
- * When the RelayerService + UmbrellaAgentToken contracts are live, the seed
- * rows will be replaced with indexer-backed listings; the public-hooks block
- * stays in place as the user-generated discovery feed.
+ * On-chain performance metrics (price, revenue, missions) come online in a
+ * later phase when the RelayerService + UmbrellaAgentToken indexer is live.
+ * Until then the returned shape includes zeroed performance fields — the UI
+ * already renders a blank state for those safely.
  */
 export async function GET() {
-  const seed = seedMarketplace();
-
   let broadcasts: AgentListing[] = [];
   try {
-    const rows = await listPublicHooks(40);
-    broadcasts = rows.map((row) => toPlaceholderListing(row));
+    const rows = await listPublicHooks(60);
+    broadcasts = rows.map(toBroadcastListing);
   } catch {
-    // Supabase unavailable — fall back to seed-only so the page still renders.
     broadcasts = [];
   }
 
   return Response.json(
     {
-      listings: [...broadcasts, ...seed],
+      listings: broadcasts,
       broadcastCount: broadcasts.length,
       updatedAt: Date.now(),
     },
     {
-      headers: {
-        "Cache-Control": "public, max-age=10, s-maxage=30",
-      },
+      headers: { "Cache-Control": "public, max-age=10, s-maxage=30" },
     },
   );
 }
 
 /**
- * Map a raw `generated_hooks` row into the same `AgentListing` shape the UI
- * already renders. Values that require an on-chain Performance Oracle (price
- * ticks, dynamic fee, burned tokens) are zeroed out until the indexer is up.
+ * Map a raw `generated_hooks` row into the `AgentListing` shape the UI
+ * expects. On-chain metrics are zeroed; the indexer will populate them.
  */
-function toPlaceholderListing(row: {
+function toBroadcastListing(row: {
   id: string;
   wallet_address: string;
   model: string;
@@ -81,12 +73,7 @@ function toPlaceholderListing(row: {
       tvlUsd: 0,
       volume24hUsd: 0,
     },
-    price: {
-      usd: 0,
-      change24h: 0,
-      change7d: 0,
-      fdvUsd: 0,
-    },
+    price: { usd: 0, change24h: 0, change7d: 0, fdvUsd: 0 },
     performance: {
       missionsTotal: 0,
       missions24h: 0,

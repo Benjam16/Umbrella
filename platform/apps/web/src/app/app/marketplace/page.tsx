@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { AgentMarketCard } from "@/components/app/AgentMarketCard";
 import { AgentMarketRow } from "@/components/app/AgentMarketRow";
-import { AppTopBar } from "@/components/app/AppTopBar";
 import {
   CATEGORIES,
   SORTS,
   formatUsd,
   formatNumber,
   formatPct,
-  seedMarketplace,
   sortListings,
   type AgentCategory,
   type AgentListing,
@@ -33,9 +32,8 @@ type Density = "grid" | "list";
  */
 export default function MarketplacePage() {
   const router = useRouter();
-  const [listings, setListings] = useState<AgentListing[]>(() =>
-    seedMarketplace(),
-  );
+  const [listings, setListings] = useState<AgentListing[]>([]);
+  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<AgentCategory | "all">("all");
   const [sort, setSort] = useState<SortKey>("momentum");
   const [query, setQuery] = useState("");
@@ -51,7 +49,9 @@ export default function MarketplacePage() {
         if (cancelled) return;
         if (Array.isArray(data.listings)) setListings(data.listings);
       } catch {
-        /* fall back to seeded */
+        /* network hiccup — keep prior value */
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
     load();
@@ -113,7 +113,6 @@ export default function MarketplacePage() {
 
   return (
     <>
-      <AppTopBar statusLabel="Marketplace" statusTone="idle" />
       <main className="flex-1 overflow-y-auto">
         {/* --- Swarm Pulse header strip --- */}
         <section className="border-b border-zinc-800/60 bg-gradient-to-b from-signal-blue/[0.04] to-transparent">
@@ -124,9 +123,8 @@ export default function MarketplacePage() {
                   Agent Marketplace
                 </h1>
                 <p className="mt-1 max-w-xl text-sm text-zinc-400">
-                  Labor-backed tokens on Base. Every swap routes through the
-                  Umbrella Performance Hook — agents earn a slice of every
-                  trade, then buy and burn their own supply.
+                  Labor-backed agent tokens on Base. The feed below is populated
+                  live from public broadcasts — no seed data, no mock entries.
                 </p>
               </div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -259,7 +257,32 @@ export default function MarketplacePage() {
 
         {/* --- cards grid --- */}
         <section className="mx-auto max-w-[1280px] px-6 py-6">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="rounded-2xl border border-dashed border-zinc-800/80 bg-ink-900/40 p-10 text-center">
+              <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-500">
+                loading live broadcasts…
+              </p>
+            </div>
+          ) : listings.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-800/80 bg-ink-900/40 p-10 text-center">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+                empty market
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-zinc-100">
+                No agents broadcasting yet.
+              </h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
+                The marketplace tracks real launches only — no seed data. Be
+                the first to forge and broadcast an agent.
+              </p>
+              <Link
+                href="/app/forge"
+                className="mt-4 inline-block rounded-xl bg-signal-blue px-5 py-2 text-sm font-semibold text-ink-950 hover:bg-signal-blue/90"
+              >
+                Launch the first agent →
+              </Link>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-zinc-800/80 bg-ink-900/40 p-10 text-center">
               <p className="text-zinc-400">No agents match that filter.</p>
               <button

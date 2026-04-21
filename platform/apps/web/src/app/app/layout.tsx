@@ -1,4 +1,4 @@
-import { AppSidebar } from "@/components/app/AppSidebar";
+import { AppTopNav } from "@/components/app/AppTopNav";
 import { ToasterProvider } from "@/components/Toaster";
 import type { Metadata } from "next";
 
@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <ToasterProvider>
-      <div className="flex h-screen w-screen overflow-hidden bg-ink-950 text-zinc-100">
-        <AppSidebar />
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-ink-950 text-zinc-100">
+        <AppTopNav />
         <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
       </div>
     </ToasterProvider>
