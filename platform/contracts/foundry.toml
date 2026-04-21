@@ -1,0 +1,31 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+script = "script"
+test = "test"
+cache_path = "cache"
+via_ir = false
+optimizer = true
+optimizer_runs = 20_000
+solc_version = "0.8.26"
+# Emits ABI + bytecode for each contract. The sync-registry.ts script reads
+# these so the relayer and the web app don't have to hand-maintain ABIs.
+build_info = true
+extra_output = ["abi", "evm.bytecode.object", "evm.deployedBytecode.object", "metadata"]
+ffi = false
+# Keeps `forge fmt` aligned with the rest of the monorepo style (2-space).
+fmt = { line_length = 110, tab_width = 4, bracket_spacing = true, int_types = "long", quote_style = "double" }
+
+[rpc_endpoints]
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+# Single BaseScan API key is used for both networks.
+base = { key = "${BASESCAN_API_KEY}", chain = 8453, url = "https://api.basescan.org/v2/api?chainid=8453" }
+base_sepolia = { key = "${BASESCAN_API_KEY}", chain = 84532, url = "https://api-sepolia.basescan.org/v2/api?chainid=84532" }
+
+[profile.ci]
+fuzz = { runs = 500 }
+invariant = { runs = 100, depth = 20 }

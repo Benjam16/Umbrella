@@ -1,8 +1,11 @@
 node_modules/
 dist/
+.next/
+.turbo/
 data/
 apps/api/data/
 *.log
 .env
 .env.local
 .DS_Store
+tsconfig.tsbuildinfo

@@ -10,6 +10,7 @@ import { startBackupIntegrityWorker } from "./services/backup-integrity-worker.j
 import { startBackupWorker } from "./services/backup-worker.js";
 import { startRunRecoveryWorker } from "./services/recovery-worker.js";
 import { startSiteWatchWorker } from "./services/site-watch-worker.js";
+import { startRelayerWorker } from "./services/relayer-worker.js";
 import { store } from "./store.js";
 const app = createApp();
 
@@ -19,6 +20,7 @@ startRunRecoveryWorker();
 startSiteWatchWorker();
 startBackupWorker();
 startBackupIntegrityWorker();
+startRelayerWorker();
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`Umbrella API listening on http://localhost:${info.port}`);

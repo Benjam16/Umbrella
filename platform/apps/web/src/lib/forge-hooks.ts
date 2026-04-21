@@ -1,0 +1,185 @@
+import { createHmac } from "crypto";
+import { createPublicClient, http, parseEther, type Address, type Hex } from "viem";
+import { base } from "viem/chains";
+import { getServerSupabase } from "@umbrella/runner/supabase";
+
+export type GeneratedHookRow = {
+  id: string;
+  wallet_address: string;
+  tx_hash: string;
+  chain_id: number;
+  prompt: string | null;
+  solidity_code: string;
+  model: string;
+  status: string;
+  created_at: string;
+};
+
+type PaymentVerification = {
+  txHash: Hex;
+  from: Address;
+  to: Address;
+  value: bigint;
+};
+
+function requiredEnv(name: string): string {
+  const v = process.env[name]?.trim();
+  if (!v) throw new Error(`${name} is required`);
+  return v;
+}
+
+function webhookSigningKey(): string | null {
+  return process.env.ALCHEMY_WEBHOOK_SIGNING_KEY?.trim() || null;
+}
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  const aa = Buffer.from(a.replace(/^0x/, ""), "hex");
+  const bb = Buffer.from(b.replace(/^0x/, ""), "hex");
+  if (aa.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aa.length; i++) diff |= aa[i]! ^ bb[i]!;
+  return diff === 0;
+}
+
+export function verifyAlchemySignature(rawBody: string, signature: string | null): boolean {
+  const key = webhookSigningKey();
+  if (!key) return true;
+  if (!signature) return false;
+  const digest = createHmac("sha256", key).update(rawBody).digest("hex");
+  const normalized = signature.replace(/^sha256=/i, "");
+  return timingSafeEqualHex(digest, normalized);
+}
+
+function asHexHash(v: unknown): Hex | null {
+  if (typeof v !== "string") return null;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(v)) return null;
+  return v as Hex;
+}
+
+function extractTxHash(payload: unknown): Hex | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const direct = asHexHash(p.hash) || asHexHash(p.transactionHash) || asHexHash(p.txHash);
+  if (direct) return direct;
+
+  const event = p.event as Record<string, unknown> | undefined;
+  const fromEvent = event
+    ? asHexHash(event.hash) || asHexHash(event.transactionHash) || asHexHash(event.txHash)
+    : null;
+  if (fromEvent) return fromEvent;
+
+  const activity = Array.isArray(p.activity) ? p.activity[0] : null;
+  if (activity && typeof activity === "object") {
+    const a = activity as Record<string, unknown>;
+    const fromActivity = asHexHash(a.hash) || asHexHash(a.transactionHash);
+    if (fromActivity) return fromActivity;
+  }
+  return null;
+}
+
+export async function verifyPaymentFromWebhook(payload: unknown): Promise<PaymentVerification> {
+  const txHash = extractTxHash(payload);
+  if (!txHash) throw new Error("webhook payload missing tx hash");
+
+  const rpcUrl = requiredEnv("BASE_RPC_URL");
+  const treasury = requiredEnv("TREASURY_ADDRESS").toLowerCase();
+  const minWei = BigInt(
+    process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI?.trim() ?? parseEther("0.0011").toString(),
+  );
+
+  const client = createPublicClient({ chain: base, transport: http(rpcUrl) });
+  const tx = await client.getTransaction({ hash: txHash });
+  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  if (receipt.status !== "success") throw new Error("payment transaction reverted");
+  if (!tx.to) throw new Error("payment transaction has no recipient");
+  if (tx.to.toLowerCase() !== treasury) throw new Error("payment not sent to configured treasury");
+  if (tx.value < minWei) throw new Error("payment below minimum required amount");
+
+  return {
+    txHash,
+    from: tx.from,
+    to: tx.to,
+    value: tx.value,
+  };
+}
+
+export async function generateHookWithKimi(prompt: string): Promise<{ code: string; model: string }> {
+  const baseUrl = (
+    process.env.KIMI_BASE_URL ??
+    process.env.UMBRELLA_INFERENCE_URL ??
+    "https://api.moonshot.cn/v1"
+  ).replace(/\/$/, "");
+  const model = process.env.KIMI_MODEL?.trim() || "kimi-k2.5";
+  const apiKey = requiredEnv("KIMI_API_KEY");
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write production-ready Uniswap v4 Solidity hooks. Return only Solidity source code.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`kimi request failed: ${res.status} ${raw.slice(0, 200)}`);
+  const json = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> };
+  const code = json.choices?.[0]?.message?.content?.trim() || "";
+  if (!code) throw new Error("kimi returned empty code");
+  return { code, model };
+}
+
+export async function insertGeneratedHook(row: {
+  walletAddress: string;
+  txHash: string;
+  chainId?: number;
+  prompt?: string;
+  solidityCode: string;
+  model: string;
+}): Promise<GeneratedHookRow> {
+  const supabase = getServerSupabase();
+  if (!supabase) throw new Error("supabase not configured");
+
+  const payload = {
+    wallet_address: row.walletAddress.toLowerCase(),
+    tx_hash: row.txHash.toLowerCase(),
+    chain_id: row.chainId ?? 8453,
+    prompt: row.prompt ?? null,
+    solidity_code: row.solidityCode,
+    model: row.model,
+    status: "completed",
+  };
+
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "failed to insert generated hook");
+  return data as GeneratedHookRow;
+}
+
+export async function listGeneratedHooks(walletAddress: string, limit = 20): Promise<GeneratedHookRow[]> {
+  const supabase = getServerSupabase();
+  if (!supabase) throw new Error("supabase not configured");
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .select("*")
+    .eq("wallet_address", walletAddress.toLowerCase())
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as GeneratedHookRow[];
+}
+

@@ -1,0 +1,36 @@
+{
+  "updatedAt": "2026-04-18T13:49:37.938Z",
+  "chains": {
+    "84532": {
+      "chainName": "base_sepolia",
+      "registry": "0x4cf076300069b372f9b351e217b82ca3cea0a59b",
+      "factory": "0x9f3b972756b231e9dbd1f5e92c782bdaa3c3e7a4",
+      "tokens": [
+        {
+          "blueprintId": "competitor-scrape",
+          "symbol": "uRCN",
+          "chainId": 84532,
+          "tokenAddress": "0x06a4887e50422612a2be46189e7cd9ca18db24d1"
+        },
+        {
+          "blueprintId": "rwa-scanner",
+          "symbol": "uRWA",
+          "chainId": 84532,
+          "tokenAddress": "0xcdc07861a5cfb21dbf03f6127cf6a800a0ff47bb"
+        },
+        {
+          "blueprintId": "terminal-feed",
+          "symbol": "uFEED",
+          "chainId": 84532,
+          "tokenAddress": "0x5617d0db486a4b5e39f9e27cef0bd7a36a3baafb"
+        },
+        {
+          "blueprintId": "alpha-scribe",
+          "symbol": "uSCRB",
+          "chainId": 84532,
+          "tokenAddress": "0x3106fc72c9ce9280cd48a0a4b60b0a88adb52e87"
+        }
+      ]
+    }
+  }
+}

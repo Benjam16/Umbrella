@@ -1,0 +1,26 @@
+[
+  {
+    "blueprintId": "competitor-scrape",
+    "symbol": "uRCN",
+    "chainId": 84532,
+    "tokenAddress": "0x06a4887e50422612a2be46189e7cd9ca18db24d1"
+  },
+  {
+    "blueprintId": "rwa-scanner",
+    "symbol": "uRWA",
+    "chainId": 84532,
+    "tokenAddress": "0xcdc07861a5cfb21dbf03f6127cf6a800a0ff47bb"
+  },
+  {
+    "blueprintId": "terminal-feed",
+    "symbol": "uFEED",
+    "chainId": 84532,
+    "tokenAddress": "0x5617d0db486a4b5e39f9e27cef0bd7a36a3baafb"
+  },
+  {
+    "blueprintId": "alpha-scribe",
+    "symbol": "uSCRB",
+    "chainId": 84532,
+    "tokenAddress": "0x3106fc72c9ce9280cd48a0a4b60b0a88adb52e87"
+  }
+]

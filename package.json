@@ -52,7 +52,8 @@
     "inquirer": "^8.2.6",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "viem": "^2.48.2"
   },
   "devDependencies": {
     "@types/cron": "^2.0.1",

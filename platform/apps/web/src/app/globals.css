@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply min-h-screen bg-ink-950 text-zinc-100 antialiased;
+  background-image:
+    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(56, 189, 248, 0.08), transparent 70%),
+    radial-gradient(ellipse 60% 60% at 85% 110%, rgba(251, 191, 36, 0.05), transparent 70%),
+    linear-gradient(to bottom, #07080c 0%, #05060a 100%);
+  background-attachment: fixed;
+}
+
+/* Paper grain overlay — sits above the body gradient but below content. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: theme("backgroundImage.paper-grain");
+  background-size: 180px 180px;
+  opacity: 0.5;
+  mix-blend-mode: soft-light;
+}
+
+/* Subtle scanline for terminal chrome */
+.terminal-scan::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 255, 255, 0.015) 2px,
+    rgba(255, 255, 255, 0.015) 4px
+  );
+  border-radius: inherit;
+}
+
+/* Hand-drawn ink accent — pairs with Caveat font. */
+.ink-accent {
+  font-family: var(--font-caveat), ui-rounded, cursive;
+  letter-spacing: 0.01em;
+}
+
+/* Dashed "sketched" underline that doesn't re-rasterize mid-scroll. */
+.sketch-underline {
+  position: relative;
+}
+.sketch-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 8px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8' preserveAspectRatio='none'><path d='M1 5 C 20 1, 40 8, 60 4 S 100 1, 119 5' fill='none' stroke='rgba(200,183,154,0.55)' stroke-width='1.4' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+
+/* Subtle looping "rain haze" behind the hero. */
+.hero-haze {
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 20%, rgba(56, 189, 248, 0.12), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 60%, rgba(200, 183, 154, 0.08), transparent 70%);
+}
+
+/* Keep text crisp during parallax/opacity transitions. */
+.text-crisp {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transform: translateZ(0);
+}

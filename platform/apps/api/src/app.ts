@@ -12,10 +12,14 @@ import { memoryRoutes } from "./routes/memory.js";
 import { observerRoutes } from "./routes/observer.js";
 import { outreachRoutes } from "./routes/outreach.js";
 import { policyRoutes } from "./routes/policy.js";
+import { paymasterRoutes } from "./routes/paymaster.js";
 import { runsRoutes } from "./routes/runs.js";
 import { walletRoutes } from "./routes/wallet.js";
 import { workersRoutes } from "./routes/workers.js";
 import { webhooksRoutes } from "./routes/webhooks.js";
+import { swarmRoutes } from "./routes/swarm.js";
+import { forgeRoutes } from "./routes/forge.js";
+import { v4Routes } from "./routes/v4.js";
 import {
   authUser,
   requireUser,
@@ -121,11 +125,15 @@ export function createApp(): Hono {
   app.route("/v1/observer", observerRoutes);
   app.route("/v1/outreach", outreachRoutes);
   app.route("/v1/policy", policyRoutes);
+  app.route("/v1/paymaster", paymasterRoutes);
   app.route("/v1/runs", runsRoutes);
   app.route("/v1/wallet", walletRoutes);
   app.route("/v1/workers", workersRoutes);
   app.route("/v1/blueprints", blueprintsRoutes);
   app.route("/v1/webhooks", webhooksRoutes);
+  app.route("/v1/swarm", swarmRoutes);
+  app.route("/v1/forge", forgeRoutes);
+  app.route("/v1/v4", v4Routes);
   app.get("/v1/models", (c) => {
     const models = loadModelRegistry();
     return c.json({

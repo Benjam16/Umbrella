@@ -57,6 +57,31 @@ const RBAC_RULES: Array<{
   { method: "GET", path: /^\/v1\/health\/dr$/, roles: ["owner", "admin", "analyst"] },
   { method: "GET", path: /^\/v1\/runs\/[^/]+\/rollback-preview$/, roles: ["owner", "admin", "operator"] },
   { method: "POST", path: /^\/v1\/runs\/[^/]+\/rollback$/, roles: ["owner", "admin", "operator"] },
+  {
+    method: "POST",
+    path: /^\/v1\/swarm\/launch$/,
+    roles: ["owner", "admin", "operator"],
+  },
+  {
+    method: "POST",
+    path: /^\/v1\/swarm\/gemma-ping$/,
+    roles: ["owner", "admin", "operator"],
+  },
+  {
+    method: "POST",
+    path: /^\/v1\/swarm\/plan$/,
+    roles: ["owner", "admin", "operator"],
+  },
+  {
+    method: "POST",
+    path: /^\/v1\/swarm\/dispatch$/,
+    roles: ["owner", "admin", "operator"],
+  },
+  { method: "POST", path: /^\/v1\/forge\/compile$/, roles: ["owner", "admin", "operator"] },
+  { method: "POST", path: /^\/v1\/forge\/pipeline$/, roles: ["owner", "admin", "operator"] },
+  { method: "POST", path: /^\/v1\/forge\/execute-plan$/, roles: ["owner", "admin", "operator"] },
+  { method: "POST", path: /^\/v1\/forge\/deploy$/, roles: ["owner", "admin", "operator"] },
+  { method: "POST", path: /^\/v1\/v4\/mission$/, roles: ["owner", "admin", "operator"] },
 ];
 
 export function routeRoleAllowed(
