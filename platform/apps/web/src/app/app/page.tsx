@@ -36,7 +36,7 @@ export default function LaunchpadPage() {
                 href="/app/forge"
                 className="rounded-xl bg-signal-blue px-6 py-3 text-sm font-semibold text-ink-950 shadow-lg shadow-signal-blue/20 transition hover:bg-signal-blue/90"
               >
-                Launch an agent →
+                Launch a Token or Agent →
               </Link>
               <Link
                 href="/app/marketplace"

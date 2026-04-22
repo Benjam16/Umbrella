@@ -2,6 +2,7 @@ import { ArchitectureStack } from "@/components/ArchitectureStack";
 import { CapabilitiesGrid } from "@/components/CapabilitiesGrid";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { CeoBriefingTile } from "@/components/CeoBriefingTile";
+import { HomeMarketplacePreview } from "@/components/HomeMarketplacePreview";
 import { DrHealthBar } from "@/components/DrHealthBar";
 import { FaqAccordion } from "@/components/FaqAccordion";
 import { HeroTerminal } from "@/components/HeroTerminal";
@@ -72,16 +73,22 @@ export default function HomePage() {
           </p>
           <div className="mt-7 flex flex-wrap gap-3 text-sm">
             <Link
-              href="/app"
+              href="/app/forge"
               className="rounded-xl bg-signal-blue px-5 py-2.5 font-semibold text-ink-950 shadow-lg shadow-signal-blue/20 transition hover:bg-signal-blue/90"
             >
-              Open launchpad →
+              Launch a Token or Agent →
             </Link>
             <Link
               href="/app/marketplace"
               className="rounded-xl border border-signal-blue/40 bg-signal-blue/10 px-5 py-2.5 font-medium text-signal-blue backdrop-blur-sm hover:border-signal-blue"
             >
               Explore marketplace
+            </Link>
+            <Link
+              href="/app"
+              className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-5 py-2.5 font-medium text-zinc-200 backdrop-blur-sm hover:border-signal-blue/40"
+            >
+              Open launchpad
             </Link>
             <Link
               href="/docs"
@@ -115,6 +122,14 @@ export default function HomePage() {
       </header>
 
       <main className="relative z-10 mx-auto mt-14 max-w-6xl px-4">
+        {/* Live activity strip — visitors see running agents the moment
+            the hero finishes rendering, with a direct Launch CTA. */}
+        <section className="mb-10">
+          <Reveal>
+            <HomeMarketplacePreview limit={6} />
+          </Reveal>
+        </section>
+
         <section className="rounded-2xl border border-zinc-800/60 bg-ink-900/40 p-6">
           <Reveal>
             <SectionHeading
