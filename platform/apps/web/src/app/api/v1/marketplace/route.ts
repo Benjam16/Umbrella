@@ -1,5 +1,5 @@
 import { countForksForMany, listPublicHooks } from "@/lib/forge-hooks";
-import type { AgentListing } from "@/lib/marketplace";
+import { enrichListingWithSyntheticMarket, type AgentListing } from "@/lib/marketplace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +19,9 @@ export async function GET() {
   let broadcasts: AgentListing[] = [];
   try {
     const rows = await listPublicHooks(60);
-    broadcasts = rows.map(toBroadcastListing);
+    broadcasts = rows.map((row) =>
+      enrichListingWithSyntheticMarket(toBroadcastListing(row), `${row.id}:${row.prompt ?? ""}`),
+    );
     // One round-trip to fetch fork counts for the whole page, rather than
     // N queries from each card on the client.
     if (broadcasts.length > 0) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { notFound, useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { MarketSparkline } from "@/components/app/MarketSparkline";
 import { TradeDrawer } from "@/components/app/TradeDrawer";
 import {
@@ -26,7 +26,12 @@ export default function AgentProfilePage() {
   );
   const [tradeOpen, setTradeOpen] = useState(false);
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
-  const [tickIndex, setTickIndex] = useState(0);
+  const [liveSpark, setLiveSpark] = useState<Array<{ t: number; price: number }>>([]);
+  const [tradeTape, setTradeTape] = useState<
+    Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }>
+  >([]);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [liveDelta, setLiveDelta] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,48 +63,44 @@ export default function AgentProfilePage() {
   }, [searchParams]);
 
   useEffect(() => {
-    setTickIndex(0);
-    if (!listing?.spark.length) return;
-    const timer = setInterval(() => {
-      setTickIndex((prev) => (prev + 1) % listing.spark.length);
-    }, 2200);
-    return () => clearInterval(timer);
-  }, [listing?.id, listing?.spark.length]);
-
-  const liveSpark = useMemo(() => {
-    if (!listing) return [];
-    if (listing.spark.length <= 2) return listing.spark;
-    const minWindow = 24;
-    const end = Math.max(2, tickIndex + 1);
-    const start = Math.max(0, end - minWindow);
-    return listing.spark.slice(start, end);
-  }, [listing, tickIndex]);
-
-  const livePrice = liveSpark[liveSpark.length - 1]?.price ?? listing?.price.usd ?? 0;
-  const prevPrice = liveSpark[liveSpark.length - 2]?.price ?? livePrice;
-  const liveDelta = prevPrice ? (livePrice - prevPrice) / prevPrice : 0;
-  const isPositive = liveDelta >= 0;
-  const tradeTape = useMemo(() => {
-    if (!listing) return [];
-    const out: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }> = [];
-    for (let i = 1; i < listing.spark.length; i++) {
-      const prev = listing.spark[i - 1]!;
-      const curr = listing.spark[i]!;
-      const delta = curr.price - prev.price;
-      const pct = prev.price > 0 ? Math.abs(delta / prev.price) : 0.001;
-      out.push({
-        id: `${listing.id}-${i}`,
-        side: delta >= 0 ? "BUY" : "SELL",
-        price: curr.price,
-        size: Math.max(15, Math.round(pct * 22000)),
-        ts: curr.t,
-      });
-    }
-    return out.reverse().slice(0, 18);
-  }, [listing]);
+    if (!listing?.id) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/v1/marketplace/${encodeURIComponent(listing.id)}/live`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          live?: { priceUsd?: number; delta?: number };
+          spark?: Array<{ t: number; price: number }>;
+          tape?: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }>;
+        };
+        if (cancelled) return;
+        if (Array.isArray(data.spark)) setLiveSpark(data.spark);
+        if (Array.isArray(data.tape)) setTradeTape(data.tape.slice(0, 18));
+        if (typeof data.live?.priceUsd === "number") setLivePrice(data.live.priceUsd);
+        if (typeof data.live?.delta === "number") setLiveDelta(data.live.delta);
+      } catch {
+        /* best-effort live stream */
+      }
+    };
+    void load();
+    const timer = setInterval(load, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [listing?.id]);
 
   if (listing === null) notFound();
   if (!listing) return null;
+  const chartSpark = liveSpark.length > 1 ? liveSpark : listing.spark;
+  const shownPrice = livePrice ?? listing.price.usd;
+  const shownDelta = liveDelta ?? listing.price.change24h;
+  const isPositive = shownDelta >= 0;
+  const shownTape = tradeTape.length > 0 ? tradeTape : [];
 
   return (
     <>
@@ -149,14 +150,14 @@ export default function AgentProfilePage() {
 
             <div className="flex flex-col items-end gap-2">
               <div className="text-[24px] font-mono font-semibold text-zinc-100">
-                {formatUsd(livePrice)}
+                {formatUsd(shownPrice)}
               </div>
               <div
                 className={`font-mono text-[12px] ${
                   isPositive ? "text-signal-green" : "text-signal-red"
                 }`}
               >
-                {formatPct(liveDelta)} · live tick ·{" "}
+                {formatPct(shownDelta)} · live tick ·{" "}
                 {formatPct(listing.price.change24h)} · 24h
               </div>
               <div className="flex items-center gap-2">
@@ -191,7 +192,7 @@ export default function AgentProfilePage() {
               <span>updated {timeAgo(listing.updatedAt)}</span>
             </div>
             <MarketSparkline
-              spark={liveSpark}
+              spark={chartSpark}
               missions={listing.missions}
               tone={isPositive ? "up" : "down"}
               width={1040}
@@ -266,7 +267,12 @@ export default function AgentProfilePage() {
                   Live tape
                 </h3>
                 <ul className="max-h-[220px] space-y-1 overflow-auto">
-                  {tradeTape.map((t) => (
+                  {shownTape.length === 0 && (
+                    <li className="rounded border border-zinc-800/70 bg-ink-950/60 px-2 py-2 text-center text-zinc-500">
+                      Waiting for trade prints...
+                    </li>
+                  )}
+                  {shownTape.map((t) => (
                     <li
                       key={t.id}
                       className="flex items-center justify-between rounded border border-zinc-800/70 bg-ink-950/60 px-2 py-1"

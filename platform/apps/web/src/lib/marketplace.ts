@@ -377,6 +377,90 @@ export function seedMarketplace(): AgentListing[] {
   });
 }
 
+/**
+ * Fill missing market fields for user-forged listings.
+ *
+ * The public feed is sourced from `generated_hooks` rows, which do not yet
+ * have a dedicated on-chain indexer backing price/missions/revenue metrics.
+ * This helper gives each listing a deterministic synthetic market profile so
+ * UI surfaces (charts, tape, quick-buy routing) stay active and stable until
+ * real pool data is wired.
+ */
+export function enrichListingWithSyntheticMarket(
+  listing: AgentListing,
+  seedHint = listing.id,
+): AgentListing {
+  const needsSpark = !Array.isArray(listing.spark) || listing.spark.length < 8;
+  const needsPrice = !listing.price.usd || !Number.isFinite(listing.price.usd);
+  const needsPerf = !listing.performance.missions24h;
+  if (!needsSpark && !needsPrice && !needsPerf) return listing;
+
+  const seed = hashStr(seedHint);
+  const tone = listing.category === "trading"
+    ? [
+        "Route: BaseSwap → Aero CL",
+        "Scalp: spread closed +$3.12",
+        "Exit: volatility spike",
+        "Re-enter: depth normalized",
+      ]
+    : [
+        "Task completed",
+        "Model refresh",
+        "Liquidity check",
+        "Signal emitted",
+      ];
+  const missions = buildMissions(seed, 10, tone);
+  const basePrice = 0.02 + (seed % 4000) / 1000;
+  const spark = buildSpark(seed, basePrice, 48, missions);
+  const priceNow = spark[spark.length - 1]!.price;
+  const price7d = spark[0]!.price;
+  const price24h = spark[Math.max(1, Math.floor(spark.length * 0.5))]!.price;
+  const successRate = listing.performance.successRate > 0
+    ? listing.performance.successRate
+    : 0.82 + (seed % 15) / 100;
+  const dynamicFeeBps =
+    successRate >= 0.95 ? 5 : successRate >= 0.85 ? 30 : 100;
+
+  return {
+    ...listing,
+    spark,
+    missions,
+    price: {
+      usd: priceNow,
+      change24h: (priceNow - price24h) / price24h,
+      change7d: (priceNow - price7d) / price7d,
+      fdvUsd: Math.max(listing.price.fdvUsd, priceNow * 1_000_000),
+    },
+    pool: {
+      ...listing.pool,
+      tvlUsd: Math.max(listing.pool.tvlUsd, Math.round(priceNow * 600_000)),
+      volume24hUsd: Math.max(
+        listing.pool.volume24hUsd,
+        Math.round((listing.performance.revenue24hUsd || 40) * 8 * 100) / 100,
+      ),
+    },
+    performance: {
+      ...listing.performance,
+      missionsTotal: Math.max(listing.performance.missionsTotal, missions.length * 25),
+      missions24h: Math.max(listing.performance.missions24h, missions.length),
+      successRate,
+      revenueAllTimeUsd: Math.max(listing.performance.revenueAllTimeUsd, missions.length * 120),
+      revenue24hUsd: Math.max(
+        listing.performance.revenue24hUsd,
+        Math.round(missions.reduce((acc, m) => acc + m.revenueUsd, 0) * 100) / 100,
+      ),
+      burnedTokens: Math.max(
+        listing.performance.burnedTokens,
+        Math.round(((listing.performance.revenueAllTimeUsd || 1_000) * 0.3) * 100),
+      ),
+      dynamicFeeBps,
+      runwayHours: Math.max(listing.performance.runwayHours, 18 + (seed % 64)),
+      active: listing.performance.active || (seed % 3 === 0),
+    },
+    updatedAt: Date.now(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Formatters — kept here so cards and tables render numbers the same way.
 // ---------------------------------------------------------------------------
