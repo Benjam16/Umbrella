@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
+import { useAccount } from "wagmi";
 import type { AgentListing } from "@/lib/marketplace";
 import { formatUsd } from "@/lib/marketplace";
 
@@ -28,9 +29,12 @@ type Props = {
 export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Props) {
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
+  const { address, isConnected } = useAccount();
+  const [submitError, setSubmitError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
     setSide(initialSide);
+    setSubmitError(null);
   }, [open, initialSide]);
 
   const parsed = Number(amount);
@@ -56,6 +60,46 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
     listing.performance.successRate >= 0.95
       ? "border-signal-green/40 shadow-[0_0_40px_-10px_rgba(34,211,166,0.4)]"
       : "border-zinc-800";
+  const hasCanonicalToken =
+    /^0x[a-fA-F0-9]{40}$/.test(listing.token.address) &&
+    listing.token.address !== "0x0000000000000000000000000000000000000000";
+
+  async function executeTrade() {
+    if (!output || output.usd <= 0) return;
+    if (!isConnected || !address) {
+      setSubmitError("Connect wallet to continue.");
+      return;
+    }
+    if (!hasCanonicalToken) {
+      setSubmitError("Token trading route not configured for this listing yet.");
+      return;
+    }
+    setSubmitError(null);
+    await fetch("/api/v1/trades/intents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        walletAddress: address,
+        hookId: listing.id,
+        side,
+        amountUsd: output.usd,
+        tokenAmount: output.tokens,
+      }),
+    }).catch(() => {
+      /* non-blocking: intent persistence should not block swap redirect */
+    });
+
+    const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    const inputCurrency = side === "buy" ? USDC_BASE : listing.token.address;
+    const outputCurrency = side === "buy" ? listing.token.address : USDC_BASE;
+    const amountParam = side === "buy" ? output.usd.toFixed(2) : output.tokens.toFixed(6);
+    const url =
+      `https://app.uniswap.org/#/swap?chain=base` +
+      `&inputCurrency=${encodeURIComponent(inputCurrency)}` +
+      `&outputCurrency=${encodeURIComponent(outputCurrency)}` +
+      `&exactField=input&exactAmount=${encodeURIComponent(amountParam)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <AnimatePresence>
@@ -159,26 +203,22 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
             <button
               type="button"
               disabled={!output || output.usd <= 0}
-              onClick={() => {
-                // Phase 2: wagmi.useWriteContract against the v4 PoolManager
-                // with capabilities.paymasterService.url = UMBRELLA_PAYMASTER.
-                alert(
-                  `Simulated ${side} ${listing.symbol} via Uniswap v4 hook.\n\nPaymaster will sponsor gas via the Umbrella tank. Wire the real call in Phase 2 (wagmi + paymaster capabilities).`,
-                );
-              }}
+              onClick={executeTrade}
               className={`mt-4 w-full rounded-md border py-2.5 font-mono text-[12px] uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 side === "buy"
                   ? "border-signal-green/40 bg-signal-green/10 text-signal-green hover:border-signal-green"
                   : "border-signal-red/40 bg-signal-red/10 text-signal-red hover:border-signal-red"
               }`}
             >
-              {side === "buy" ? `Back ${listing.symbol}` : `Exit ${listing.symbol}`} · gas sponsored
+              {side === "buy" ? `Buy ${listing.symbol}` : `Sell ${listing.symbol}`} · open swap
             </button>
+            {submitError && (
+              <p className="mt-2 text-center font-mono text-[10px] text-signal-red">{submitError}</p>
+            )}
 
             <p className="mt-3 text-center text-[10px] text-zinc-600">
-              Routed through Umbrella Performance Hook · afterSwap diverts{" "}
-              {(treasuryBps / 100).toFixed(2)}% to the agent&apos;s Coinbase Smart Wallet
-              for autonomous buy &amp; burn.
+              Opens Uniswap on Base with this pair prefilled. Umbrella logs an
+              intent record so portfolio/history can be reconciled.
             </p>
           </motion.div>
         </motion.div>

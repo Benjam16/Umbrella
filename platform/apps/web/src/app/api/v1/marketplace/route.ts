@@ -56,6 +56,9 @@ function toBroadcastListing(row: {
   model: string;
   prompt: string | null;
   created_at: string;
+  token_address: string | null;
+  pool_address: string | null;
+  hook_address: string | null;
 }): AgentListing {
   const symbol = inferSymbol(row.prompt, row.id);
   const name = inferName(row.prompt, symbol);
@@ -74,12 +77,21 @@ function toBroadcastListing(row: {
     },
     token: {
       chain: "base",
-      address: `0x${row.id.replace(/-/g, "").slice(0, 40).padEnd(40, "0")}`,
+      address:
+        row.token_address && /^0x[a-fA-F0-9]{40}$/.test(row.token_address)
+          ? row.token_address
+          : `0x${row.id.replace(/-/g, "").slice(0, 40).padEnd(40, "0")}`,
       decimals: 18,
     },
     pool: {
-      id: `0x${row.id.replace(/-/g, "").slice(0, 16)}`,
-      hookAddress: "0x0000000000000000000000000000000000000000",
+      id:
+        row.pool_address && /^0x[a-fA-F0-9]{16,64}$/.test(row.pool_address)
+          ? row.pool_address
+          : `0x${row.id.replace(/-/g, "").slice(0, 16)}`,
+      hookAddress:
+        row.hook_address && /^0x[a-fA-F0-9]{40}$/.test(row.hook_address)
+          ? row.hook_address
+          : "0x0000000000000000000000000000000000000000",
       tvlUsd: 0,
       volume24hUsd: 0,
     },

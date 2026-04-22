@@ -15,6 +15,9 @@ export type GeneratedHookRow = {
   is_public: boolean;
   /** Hook id this row was forked from, if any (see migration 0003). */
   forked_from: string | null;
+  token_address: string | null;
+  pool_address: string | null;
+  hook_address: string | null;
   created_at: string;
 };
 
@@ -155,6 +158,9 @@ export async function insertGeneratedHook(row: {
    * parent's "forks" total and can be traced back via the lineage graph.
    */
   forkedFrom?: string | null;
+  tokenAddress?: string | null;
+  poolAddress?: string | null;
+  hookAddress?: string | null;
 }): Promise<GeneratedHookRow> {
   const supabase = getServerSupabase();
   if (!supabase) throw new Error("supabase not configured");
@@ -168,6 +174,9 @@ export async function insertGeneratedHook(row: {
     model: row.model,
     status: "completed",
     forked_from: row.forkedFrom ?? null,
+    token_address: row.tokenAddress ?? null,
+    pool_address: row.poolAddress ?? null,
+    hook_address: row.hookAddress ?? null,
   };
 
   const { data, error } = await supabase
@@ -242,20 +251,36 @@ export async function getPublicHookById(
   id: string,
 ): Promise<Pick<
   GeneratedHookRow,
-  "id" | "wallet_address" | "model" | "prompt" | "created_at"
+  | "id"
+  | "wallet_address"
+  | "model"
+  | "prompt"
+  | "created_at"
+  | "token_address"
+  | "pool_address"
+  | "hook_address"
 > | null> {
   const supabase = getServerSupabase();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("generated_hooks")
-    .select("id, wallet_address, model, prompt, created_at")
+    .select(
+      "id, wallet_address, model, prompt, created_at, token_address, pool_address, hook_address",
+    )
     .eq("id", id)
     .eq("is_public", true)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return (data ?? null) as Pick<
     GeneratedHookRow,
-    "id" | "wallet_address" | "model" | "prompt" | "created_at"
+    | "id"
+    | "wallet_address"
+    | "model"
+    | "prompt"
+    | "created_at"
+    | "token_address"
+    | "pool_address"
+    | "hook_address"
   > | null;
 }
 
@@ -263,7 +288,14 @@ export async function listPublicHooks(limit = 50): Promise<
   Array<
     Pick<
       GeneratedHookRow,
-      "id" | "wallet_address" | "model" | "prompt" | "created_at"
+      | "id"
+      | "wallet_address"
+      | "model"
+      | "prompt"
+      | "created_at"
+      | "token_address"
+      | "pool_address"
+      | "hook_address"
     >
   >
 > {
@@ -271,7 +303,9 @@ export async function listPublicHooks(limit = 50): Promise<
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("generated_hooks")
-    .select("id, wallet_address, model, prompt, created_at")
+    .select(
+      "id, wallet_address, model, prompt, created_at, token_address, pool_address, hook_address",
+    )
     .eq("is_public", true)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -279,7 +313,14 @@ export async function listPublicHooks(limit = 50): Promise<
   return (data ?? []) as Array<
     Pick<
       GeneratedHookRow,
-      "id" | "wallet_address" | "model" | "prompt" | "created_at"
+      | "id"
+      | "wallet_address"
+      | "model"
+      | "prompt"
+      | "created_at"
+      | "token_address"
+      | "pool_address"
+      | "hook_address"
     >
   >;
 }

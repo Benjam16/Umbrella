@@ -26,6 +26,7 @@ const PRIMARY: Tab[] = [
 ];
 
 const OVERFLOW: Tab[] = [
+  { href: "/app/portfolio", label: "Portfolio", match: startsWith("/app/portfolio") },
   { href: "/app/runs", label: "Runs", match: startsWith("/app/runs") },
   { href: "/app/nodes", label: "Nodes", match: startsWith("/app/nodes") },
   { href: "/app/settings", label: "Settings", match: startsWith("/app/settings") },
