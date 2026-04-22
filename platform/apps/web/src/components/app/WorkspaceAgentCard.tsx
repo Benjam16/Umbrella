@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSignMessage } from "wagmi";
+import { ensureWalletSession } from "@/lib/client-wallet-auth";
 import {
   clearLaunch,
   markLaunchVisibility,
@@ -30,6 +32,7 @@ export function WorkspaceAgentCard({ launch }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forks, setForks] = useState<number | null>(null);
+  const { signMessageAsync } = useSignMessage();
 
   const hookId = launch.hookId;
   const ready = launch.status === "ready";
@@ -106,6 +109,10 @@ export function WorkspaceAgentCard({ launch }: Props) {
     setSaving(true);
     setError(null);
     try {
+      await ensureWalletSession({
+        walletAddress: launch.walletAddress,
+        signMessageAsync,
+      });
       const res = await fetch(`/api/v1/forge/hooks/${hookId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -125,7 +132,7 @@ export function WorkspaceAgentCard({ launch }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [broadcast, canToggle, hookId, launch.id, launch.walletAddress]);
+  }, [broadcast, canToggle, hookId, launch.id, launch.walletAddress, signMessageAsync]);
 
   return (
     <li className="group flex flex-col gap-2 rounded-xl border border-zinc-800/80 bg-ink-950/60 p-3">

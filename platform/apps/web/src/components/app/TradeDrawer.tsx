@@ -2,9 +2,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
 import type { AgentListing } from "@/lib/marketplace";
 import { formatUsd } from "@/lib/marketplace";
+import { ensureWalletSession } from "@/lib/client-wallet-auth";
 
 type Side = "buy" | "sell";
 
@@ -30,6 +31,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
   const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [submitError, setSubmitError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -75,6 +77,10 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
       return;
     }
     setSubmitError(null);
+    await ensureWalletSession({
+      walletAddress: address,
+      signMessageAsync,
+    });
     await fetch("/api/v1/trades/intents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { setHookPublic } from "@/lib/forge-hooks";
+import { readWalletSessionFromCookie } from "@/lib/wallet-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +39,10 @@ export async function PATCH(
       { error: "walletAddress and isPublic are required" },
       { status: 400 },
     );
+  }
+  const sessionWallet = readWalletSessionFromCookie(req.headers.get("cookie"));
+  if (!sessionWallet || sessionWallet !== parsed.data.walletAddress) {
+    return Response.json({ error: "wallet auth required" }, { status: 401 });
   }
 
   try {

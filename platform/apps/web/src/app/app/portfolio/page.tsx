@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
+import { ensureWalletSession } from "@/lib/client-wallet-auth";
 
 type TradeIntent = {
   id: string;
@@ -17,6 +18,7 @@ type TradeIntent = {
 
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [intents, setIntents] = useState<TradeIntent[] | null>(null);
 
   useEffect(() => {
@@ -27,6 +29,10 @@ export default function PortfolioPage() {
     let cancelled = false;
     const load = async () => {
       try {
+        await ensureWalletSession({
+          walletAddress: address,
+          signMessageAsync,
+        });
         const res = await fetch(
           `/api/v1/trades/intents?wallet=${encodeURIComponent(address.toLowerCase())}`,
           { cache: "no-store" },
@@ -44,7 +50,7 @@ export default function PortfolioPage() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [isConnected, address]);
+  }, [isConnected, address, signMessageAsync]);
 
   const totals = useMemo(() => {
     const all = intents ?? [];

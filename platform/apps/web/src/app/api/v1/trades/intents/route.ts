@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getServerSupabase } from "@umbrella/runner/supabase";
+import { readWalletSessionFromCookie } from "@/lib/wallet-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) return Response.json({ error: "invalid payload" }, { status: 400 });
   const p = parsed.data;
+  const sessionWallet = readWalletSessionFromCookie(req.headers.get("cookie"));
+  if (!sessionWallet || sessionWallet !== p.walletAddress.toLowerCase()) {
+    return Response.json({ error: "wallet auth required" }, { status: 401 });
+  }
 
   const { data, error } = await supabase
     .from("user_trade_intents")
@@ -45,6 +50,10 @@ export async function GET(req: Request) {
   const wallet = url.searchParams.get("wallet")?.toLowerCase() ?? "";
   if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
     return Response.json({ error: "wallet query param required" }, { status: 400 });
+  }
+  const sessionWallet = readWalletSessionFromCookie(req.headers.get("cookie"));
+  if (!sessionWallet || sessionWallet !== wallet) {
+    return Response.json({ error: "wallet auth required" }, { status: 401 });
   }
   const { data, error } = await supabase
     .from("user_trade_intents")
