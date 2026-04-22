@@ -83,6 +83,12 @@ export type AgentListing = {
   missions: MissionEvent[];
   /** Unix ms that this listing was last updated by the relayer. */
   updatedAt: number;
+  /**
+   * Number of times this hook has been forked by other users (via the
+   * Marketplace "Fork" flow). Populated by `/api/v1/marketplace` from the
+   * `forked_from` column added in migration 0003.
+   */
+  forksCount?: number;
 };
 
 export type AgentCategoryMeta = {

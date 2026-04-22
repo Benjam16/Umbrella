@@ -148,7 +148,12 @@ function ForgeView() {
       const res = await fetch("/api/v1/forge/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result),
+        body: JSON.stringify({
+          ...result,
+          // If the wizard was seeded via Marketplace → "Fork this agent",
+          // persist the parent id so the original creator gets fork credit.
+          forkedFrom: template?.id ?? null,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "launch failed" }));

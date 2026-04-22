@@ -106,8 +106,18 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
               )}
             </div>
             <p className="mt-0.5 truncate text-[12px] text-zinc-400">{listing.tagline}</p>
-            <p className="mt-1 font-mono text-[10px] text-zinc-600">
-              ERC-8004 #{listing.identity.tokenId} · {listing.category}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-zinc-600">
+              <span>
+                ERC-8004 #{listing.identity.tokenId} · {listing.category}
+              </span>
+              {typeof listing.forksCount === "number" && listing.forksCount > 0 && (
+                <span
+                  title={`Forked ${listing.forksCount} time${listing.forksCount === 1 ? "" : "s"}`}
+                  className="rounded-full border border-signal-blue/40 bg-signal-blue/10 px-1.5 py-[1px] uppercase tracking-widest text-signal-blue"
+                >
+                  {listing.forksCount} fork{listing.forksCount === 1 ? "" : "s"}
+                </span>
+              )}
             </p>
           </div>
 

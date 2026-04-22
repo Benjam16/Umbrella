@@ -15,6 +15,8 @@ type LaunchBody = {
   };
   walletAddress?: string;
   txHash?: string;
+  /** Hook id this launch was forked from (via Marketplace "Fork"). */
+  forkedFrom?: string;
 };
 
 function badRequest(message: string) {
@@ -47,6 +49,10 @@ export async function POST(request: Request) {
   const prompt = sanitize(body.mission?.prompt, 2_000).trim();
   const category = sanitize(body.mission?.category, 32).trim() || "execution";
   const txHash = sanitize(body.txHash, 80).trim();
+  const forkedFromRaw = sanitize(body.forkedFrom, 40).trim();
+  const forkedFrom = /^[0-9a-fA-F-]{32,40}$/.test(forkedFromRaw)
+    ? forkedFromRaw
+    : null;
 
   if (name.length < 2) return badRequest("identity.name too short");
   if (symbol.length < 2) return badRequest("identity.symbol too short");
@@ -72,6 +78,7 @@ export async function POST(request: Request) {
       prompt: composed,
       solidityCode: code,
       model,
+      forkedFrom,
     });
     return NextResponse.json({
       ok: true,

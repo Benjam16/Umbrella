@@ -86,6 +86,14 @@ export default function AgentProfilePage() {
                 <span className="rounded-full border border-zinc-800 px-2 py-0.5">
                   chain · base
                 </span>
+                {typeof listing.forksCount === "number" && listing.forksCount > 0 && (
+                  <span
+                    title={`Forked ${listing.forksCount} time${listing.forksCount === 1 ? "" : "s"}`}
+                    className="rounded-full border border-signal-blue/40 bg-signal-blue/10 px-2 py-0.5 text-signal-blue"
+                  >
+                    {listing.forksCount} fork{listing.forksCount === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
             </div>
 

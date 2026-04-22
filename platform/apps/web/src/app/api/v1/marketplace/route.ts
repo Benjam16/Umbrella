@@ -1,4 +1,4 @@
-import { listPublicHooks } from "@/lib/forge-hooks";
+import { countForksForMany, listPublicHooks } from "@/lib/forge-hooks";
 import type { AgentListing } from "@/lib/marketplace";
 
 export const runtime = "nodejs";
@@ -20,6 +20,14 @@ export async function GET() {
   try {
     const rows = await listPublicHooks(60);
     broadcasts = rows.map(toBroadcastListing);
+    // One round-trip to fetch fork counts for the whole page, rather than
+    // N queries from each card on the client.
+    if (broadcasts.length > 0) {
+      const counts = await countForksForMany(broadcasts.map((l) => l.id));
+      for (const l of broadcasts) {
+        l.forksCount = counts[l.id] ?? 0;
+      }
+    }
   } catch {
     broadcasts = [];
   }

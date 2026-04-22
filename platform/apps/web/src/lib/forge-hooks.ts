@@ -13,6 +13,8 @@ export type GeneratedHookRow = {
   model: string;
   status: string;
   is_public: boolean;
+  /** Hook id this row was forked from, if any (see migration 0003). */
+  forked_from: string | null;
   created_at: string;
 };
 
@@ -148,6 +150,11 @@ export async function insertGeneratedHook(row: {
   prompt?: string;
   solidityCode: string;
   model: string;
+  /**
+   * Optional parent hook id. When set, this row is counted toward the
+   * parent's "forks" total and can be traced back via the lineage graph.
+   */
+  forkedFrom?: string | null;
 }): Promise<GeneratedHookRow> {
   const supabase = getServerSupabase();
   if (!supabase) throw new Error("supabase not configured");
@@ -160,6 +167,7 @@ export async function insertGeneratedHook(row: {
     solidity_code: row.solidityCode,
     model: row.model,
     status: "completed",
+    forked_from: row.forkedFrom ?? null,
   };
 
   const { data, error } = await supabase
@@ -274,5 +282,47 @@ export async function listPublicHooks(limit = 50): Promise<
       "id" | "wallet_address" | "model" | "prompt" | "created_at"
     >
   >;
+}
+
+/**
+ * Number of rows whose `forked_from` references the given hook id. Used by
+ * the creator workspace card + marketplace to show reuse signal.
+ *
+ * Returns 0 when Supabase is not configured so the UI can always render.
+ */
+export async function countForks(hookId: string): Promise<number> {
+  const supabase = getServerSupabase();
+  if (!supabase) return 0;
+  const { count, error } = await supabase
+    .from("generated_hooks")
+    .select("id", { count: "exact", head: true })
+    .eq("forked_from", hookId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/**
+ * Batched version — looks up fork counts for many parent hook ids in a
+ * single round-trip so the marketplace feed doesn't fan out into N queries.
+ */
+export async function countForksForMany(
+  hookIds: string[],
+): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const id of hookIds) out[id] = 0;
+  if (hookIds.length === 0) return out;
+  const supabase = getServerSupabase();
+  if (!supabase) return out;
+
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .select("forked_from")
+    .in("forked_from", hookIds);
+  if (error) throw new Error(error.message);
+
+  for (const row of (data ?? []) as Array<{ forked_from: string | null }>) {
+    if (row.forked_from && row.forked_from in out) out[row.forked_from] += 1;
+  }
+  return out;
 }
 

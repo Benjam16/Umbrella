@@ -29,6 +29,7 @@ export function WorkspaceAgentCard({ launch }: Props) {
   const [broadcast, setBroadcast] = useState<boolean>(!!launch.isPublic);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forks, setForks] = useState<number | null>(null);
 
   const hookId = launch.hookId;
   const ready = launch.status === "ready";
@@ -70,6 +71,35 @@ export function WorkspaceAgentCard({ launch }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, hookId, launch.id, launch.walletAddress]);
 
+  // Fork count — only worth showing when the agent is public. Poll slowly so
+  // the creator sees reuse signal accrue without thrashing the DB.
+  useEffect(() => {
+    if (!ready || !hookId || !broadcast) {
+      setForks(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/v1/forge/hooks/${encodeURIComponent(hookId)}/forks`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { count?: number };
+        if (!cancelled && typeof data.count === "number") setForks(data.count);
+      } catch {
+        /* best-effort */
+      }
+    };
+    void load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [ready, hookId, broadcast]);
+
   const toggle = useCallback(async () => {
     if (!canToggle || !hookId) return;
     const next = !broadcast;
@@ -110,6 +140,9 @@ export function WorkspaceAgentCard({ launch }: Props) {
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {broadcast && ready && <PublicBadge />}
+          {broadcast && ready && forks !== null && forks > 0 && (
+            <ForksBadge count={forks} />
+          )}
           <StatusChip status={launch.status} />
         </div>
       </div>
@@ -183,6 +216,18 @@ function PublicBadge() {
     >
       <span className="h-1 w-1 rounded-full bg-signal-green" />
       Public
+    </span>
+  );
+}
+
+function ForksBadge({ count }: { count: number }) {
+  return (
+    <span
+      title={`Forked ${count} time${count === 1 ? "" : "s"}`}
+      className="flex items-center gap-1 rounded-full border border-signal-blue/40 bg-signal-blue/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal-blue"
+    >
+      <span className="h-1 w-1 rounded-full bg-signal-blue" />
+      {count} fork{count === 1 ? "" : "s"}
     </span>
   );
 }

@@ -51,6 +51,14 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
           {listing.performance.active && (
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-green" />
           )}
+          {typeof listing.forksCount === "number" && listing.forksCount > 0 && (
+            <span
+              title={`Forked ${listing.forksCount} time${listing.forksCount === 1 ? "" : "s"}`}
+              className="rounded-full border border-signal-blue/40 bg-signal-blue/10 px-1.5 py-[1px] font-mono text-[9px] uppercase tracking-widest text-signal-blue"
+            >
+              {listing.forksCount}×
+            </span>
+          )}
         </div>
         <p className="truncate text-[11px] text-zinc-500">{listing.tagline}</p>
       </div>
