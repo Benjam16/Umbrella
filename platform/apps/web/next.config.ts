@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "..", "..", ".."),
   // Transpile the shared runner package (exports raw TS via "exports" map).
   transpilePackages: ["@umbrella/runner"],
+  webpack: (config) => {
+    config.resolve ??= {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      // Optional React Native dep pulled by MetaMask SDK internals; not needed on web.
+      "@react-native-async-storage/async-storage": false,
+      // Optional pretty logger used in Node CLIs, not browser bundles.
+      "pino-pretty": false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;

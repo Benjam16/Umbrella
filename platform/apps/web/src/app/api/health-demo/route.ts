@@ -1,4 +1,4 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 /**
  * Demo DR-style payload for the marketing site. Point a real deployment at
@@ -11,7 +11,7 @@ export async function GET() {
       status: "healthy",
       integrity: "ok",
       lastSnapshotIso: now,
-      source: "edge-demo",
+      source: "nodejs-demo",
       hint: "Mirrors GET /v1/health/dr shape for trust UX; wire production API when ready.",
     },
     {

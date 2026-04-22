@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 
 type Identity = {
@@ -160,6 +160,7 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
               identity={identity}
               setIdentity={setIdentity}
               valid={validStep1}
+              wallet={wallet}
             />
           )}
           {step === 2 && (
@@ -272,10 +273,12 @@ function StepIdentity({
   identity,
   setIdentity,
   valid,
+  wallet,
 }: {
   identity: Identity;
   setIdentity: (next: Identity) => void;
   valid: boolean;
+  wallet: string;
 }) {
   return (
     <div className="space-y-4">
@@ -295,16 +298,162 @@ function StepIdentity({
           className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 font-mono text-sm uppercase text-zinc-100 outline-none focus:border-signal-blue"
         />
       </Field>
-      <Field label="Image URL (optional)">
-        <input
-          value={identity.imageUrl}
-          onChange={(e) => setIdentity({ ...identity, imageUrl: e.target.value })}
-          placeholder="https://..."
-          className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-signal-blue"
+      <Field label="Token Image (optional)" hint="PNG, JPG, WEBP or GIF · up to 2MB">
+        <ImageUploadField
+          imageUrl={identity.imageUrl}
+          onChange={(url) => setIdentity({ ...identity, imageUrl: url })}
+          wallet={wallet}
         />
       </Field>
       {!valid && (
         <p className="text-xs text-zinc-500">Provide at least a name and a 2+ char symbol.</p>
+      )}
+    </div>
+  );
+}
+
+function ImageUploadField({
+  imageUrl,
+  onChange,
+  wallet,
+}: {
+  imageUrl: string;
+  onChange: (url: string) => void;
+  wallet: string;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  async function upload(file: File) {
+    setError(null);
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
+      setError("Unsupported file type. Use PNG, JPG, WEBP or GIF.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError("File too large. Max 2MB.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      if (/^0x[a-fA-F0-9]{40}$/.test(wallet)) form.append("wallet", wallet);
+      const res = await fetch("/api/v1/forge/image", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || `upload failed (${res.status})`);
+      }
+      onChange(data.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) void upload(file);
+    // Reset so re-picking the same file still triggers change.
+    e.target.value = "";
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void upload(file);
+  }
+
+  const hasImage = Boolean(imageUrl);
+
+  return (
+    <div>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={`flex items-center gap-3 rounded-md border border-dashed p-3 transition ${
+          dragging
+            ? "border-signal-blue bg-signal-blue/5"
+            : hasImage
+              ? "border-zinc-800 bg-ink-950"
+              : "border-zinc-800 bg-ink-950 hover:border-zinc-700"
+        }`}
+      >
+        <div className="flex h-16 w-16 flex-none items-center justify-center overflow-hidden rounded-md border border-zinc-800 bg-ink-900">
+          {hasImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt="Token preview"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-600">
+              preview
+            </span>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-zinc-300">
+            {uploading
+              ? "Uploading…"
+              : hasImage
+                ? "Image attached."
+                : "Drop a file here or click Upload."}
+          </p>
+          {hasImage && !uploading && (
+            <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">
+              {imageUrl}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-none items-center gap-2">
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+            className="rounded-md border border-signal-blue/40 bg-signal-blue/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-signal-blue transition hover:border-signal-blue disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {uploading ? "Uploading…" : hasImage ? "Replace" : "Upload"}
+          </button>
+          {hasImage && !uploading && (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="rounded-md border border-zinc-800 px-2 py-1.5 font-mono text-[10px] uppercase tracking-widest text-zinc-400 transition hover:border-signal-red hover:text-signal-red"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={onFilePicked}
+          className="hidden"
+        />
+      </div>
+
+      {error && (
+        <p className="mt-2 font-mono text-[10px] text-signal-red">{error}</p>
       )}
     </div>
   );
