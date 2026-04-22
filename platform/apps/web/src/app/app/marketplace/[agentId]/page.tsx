@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { notFound, useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { notFound, useParams, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { MarketSparkline } from "@/components/app/MarketSparkline";
 import { TradeDrawer } from "@/components/app/TradeDrawer";
 import {
@@ -20,10 +20,13 @@ import {
  */
 export default function AgentProfilePage() {
   const params = useParams<{ agentId: string }>();
+  const searchParams = useSearchParams();
   const [listing, setListing] = useState<AgentListing | null | undefined>(
     undefined,
   );
   const [tradeOpen, setTradeOpen] = useState(false);
+  const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
+  const [tickIndex, setTickIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +49,57 @@ export default function AgentProfilePage() {
     };
   }, [params.agentId]);
 
+  useEffect(() => {
+    const trade = searchParams?.get("trade");
+    if (trade === "buy" || trade === "sell") {
+      setTradeSide(trade);
+      setTradeOpen(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setTickIndex(0);
+    if (!listing?.spark.length) return;
+    const timer = setInterval(() => {
+      setTickIndex((prev) => (prev + 1) % listing.spark.length);
+    }, 2200);
+    return () => clearInterval(timer);
+  }, [listing?.id, listing?.spark.length]);
+
+  const liveSpark = useMemo(() => {
+    if (!listing) return [];
+    if (listing.spark.length <= 2) return listing.spark;
+    const minWindow = 24;
+    const end = Math.max(2, tickIndex + 1);
+    const start = Math.max(0, end - minWindow);
+    return listing.spark.slice(start, end);
+  }, [listing, tickIndex]);
+
+  const livePrice = liveSpark[liveSpark.length - 1]?.price ?? listing?.price.usd ?? 0;
+  const prevPrice = liveSpark[liveSpark.length - 2]?.price ?? livePrice;
+  const liveDelta = prevPrice ? (livePrice - prevPrice) / prevPrice : 0;
+  const isPositive = liveDelta >= 0;
+  const tradeTape = useMemo(() => {
+    if (!listing) return [];
+    const out: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }> = [];
+    for (let i = 1; i < listing.spark.length; i++) {
+      const prev = listing.spark[i - 1]!;
+      const curr = listing.spark[i]!;
+      const delta = curr.price - prev.price;
+      const pct = prev.price > 0 ? Math.abs(delta / prev.price) : 0.001;
+      out.push({
+        id: `${listing.id}-${i}`,
+        side: delta >= 0 ? "BUY" : "SELL",
+        price: curr.price,
+        size: Math.max(15, Math.round(pct * 22000)),
+        ts: curr.t,
+      });
+    }
+    return out.reverse().slice(0, 18);
+  }, [listing]);
+
   if (listing === null) notFound();
   if (!listing) return null;
-
-  const isPositive = listing.price.change24h >= 0;
 
   return (
     <>
@@ -99,34 +149,49 @@ export default function AgentProfilePage() {
 
             <div className="flex flex-col items-end gap-2">
               <div className="text-[24px] font-mono font-semibold text-zinc-100">
-                {formatUsd(listing.price.usd)}
+                {formatUsd(livePrice)}
               </div>
               <div
                 className={`font-mono text-[12px] ${
                   isPositive ? "text-signal-green" : "text-signal-red"
                 }`}
               >
-                {formatPct(listing.price.change24h)} · 24h ·{" "}
-                {formatPct(listing.price.change7d)} · 7d
+                {formatPct(liveDelta)} · live tick ·{" "}
+                {formatPct(listing.price.change24h)} · 24h
               </div>
-              <button
-                type="button"
-                onClick={() => setTradeOpen(true)}
-                className="rounded-md border border-signal-blue/40 bg-signal-blue/10 px-4 py-1.5 font-mono text-[11px] uppercase tracking-wider text-signal-blue hover:border-signal-blue"
-              >
-                Trade via v4 hook
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTradeSide("buy");
+                    setTradeOpen(true);
+                  }}
+                  className="rounded-md border border-signal-green/40 bg-signal-green/10 px-4 py-1.5 font-mono text-[11px] uppercase tracking-wider text-signal-green hover:border-signal-green"
+                >
+                  Buy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTradeSide("sell");
+                    setTradeOpen(true);
+                  }}
+                  className="rounded-md border border-signal-red/40 bg-signal-red/10 px-4 py-1.5 font-mono text-[11px] uppercase tracking-wider text-signal-red hover:border-signal-red"
+                >
+                  Sell
+                </button>
+              </div>
             </div>
           </header>
 
           {/* Big spark */}
           <section className="mt-6 rounded-2xl border border-zinc-800/80 bg-ink-900/60 p-4">
             <div className="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-              <span>Work-Pulse chart · green dots = missions complete</span>
+              <span>Price chart · green dots = missions complete</span>
               <span>updated {timeAgo(listing.updatedAt)}</span>
             </div>
             <MarketSparkline
-              spark={listing.spark}
+              spark={liveSpark}
               missions={listing.missions}
               tone={isPositive ? "up" : "down"}
               width={1040}
@@ -170,7 +235,7 @@ export default function AgentProfilePage() {
             />
           </section>
 
-          {/* Mission log */}
+          {/* Mission log + trade tape */}
           <section className="mt-6 grid gap-4 md:grid-cols-[2fr_1fr]">
             <div className="rounded-2xl border border-zinc-800/80 bg-ink-900/60 p-4">
               <h2 className="mb-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -196,6 +261,29 @@ export default function AgentProfilePage() {
             </div>
 
             <div className="space-y-3">
+              <div className="rounded-2xl border border-zinc-800/80 bg-ink-900/60 p-4 font-mono text-[11px] text-zinc-300">
+                <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500">
+                  Live tape
+                </h3>
+                <ul className="max-h-[220px] space-y-1 overflow-auto">
+                  {tradeTape.map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between rounded border border-zinc-800/70 bg-ink-950/60 px-2 py-1"
+                    >
+                      <span
+                        className={
+                          t.side === "BUY" ? "text-signal-green" : "text-signal-red"
+                        }
+                      >
+                        {t.side}
+                      </span>
+                      <span>${t.price.toFixed(4)}</span>
+                      <span className="text-zinc-500">{t.size.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <div className="rounded-2xl border border-zinc-800/80 bg-ink-900/60 p-4 font-mono text-[11px] text-zinc-300">
                 <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500">
                   On-chain
@@ -237,6 +325,7 @@ export default function AgentProfilePage() {
         listing={listing}
         open={tradeOpen}
         onClose={() => setTradeOpen(false)}
+        initialSide={tradeSide}
       />
     </>
   );

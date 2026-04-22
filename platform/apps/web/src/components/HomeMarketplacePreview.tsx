@@ -20,7 +20,7 @@ export function HomeMarketplacePreview({ limit = 6 }: { limit?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
         const res = await fetch("/api/v1/marketplace", { cache: "no-store" });
         if (!res.ok) throw new Error(`http ${res.status}`);
@@ -33,9 +33,12 @@ export function HomeMarketplacePreview({ limit = 6 }: { limit?: number }) {
           setListings([]);
         }
       }
-    })();
+    };
+    void load();
+    const timer = setInterval(load, 12_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [limit]);
 
@@ -98,8 +101,7 @@ export function HomeMarketplacePreview({ limit = 6 }: { limit?: number }) {
 function HomeListingCard({ listing }: { listing: AgentListing }) {
   const shortCreator = `${listing.identity.contract.slice(0, 6)}…${listing.identity.contract.slice(-4)}`;
   return (
-    <Link
-      href={`/app/marketplace/${listing.id}`}
+    <div
       className="group flex h-full flex-col justify-between rounded-xl border border-zinc-800/80 bg-ink-950/60 p-3 transition hover:border-signal-blue/60"
     >
       <div>
@@ -122,12 +124,45 @@ function HomeListingCard({ listing }: { listing: AgentListing }) {
         <p className="mt-1 line-clamp-2 text-xs text-zinc-400">
           {listing.tagline}
         </p>
+        <p className="mt-2 font-mono text-[11px] text-zinc-300">
+          ${listing.price.usd.toFixed(4)}{" "}
+          <span
+            className={
+              listing.price.change24h >= 0 ? "text-signal-green" : "text-signal-red"
+            }
+          >
+            {listing.price.change24h >= 0 ? "+" : ""}
+            {(listing.price.change24h * 100).toFixed(2)}%
+          </span>
+        </p>
       </div>
-      <div className="mt-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-        <span>{listing.category}</span>
-        <span className="text-zinc-600">{shortCreator}</span>
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+          <span>{listing.category}</span>
+          <span className="text-zinc-600">{shortCreator}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/app/marketplace/${listing.id}?trade=buy`}
+            className="flex-1 rounded-md border border-signal-green/40 bg-signal-green/10 px-2 py-1 text-center font-mono text-[10px] uppercase tracking-widest text-signal-green transition hover:border-signal-green"
+          >
+            Buy
+          </Link>
+          <Link
+            href={`/app/marketplace/${listing.id}?trade=sell`}
+            className="flex-1 rounded-md border border-signal-red/40 bg-signal-red/10 px-2 py-1 text-center font-mono text-[10px] uppercase tracking-widest text-signal-red transition hover:border-signal-red"
+          >
+            Sell
+          </Link>
+          <Link
+            href={`/app/marketplace/${listing.id}`}
+            className="rounded-md border border-zinc-700 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-300 transition hover:border-signal-blue hover:text-signal-blue"
+          >
+            View
+          </Link>
+        </div>
       </div>
-    </Link>
+    </div>
   );
 }
 

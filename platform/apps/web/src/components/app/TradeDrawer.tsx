@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AgentListing } from "@/lib/marketplace";
 import { formatUsd } from "@/lib/marketplace";
 
@@ -11,6 +11,7 @@ type Props = {
   listing: AgentListing;
   open: boolean;
   onClose: () => void;
+  initialSide?: Side;
 };
 
 /**
@@ -24,9 +25,13 @@ type Props = {
  * (dynamicFeeBps, treasuryBps, runway) is the same state the real
  * transaction will read from the hook.
  */
-export function TradeDrawer({ listing, open, onClose }: Props) {
+export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Props) {
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setSide(initialSide);
+  }, [open, initialSide]);
 
   const parsed = Number(amount);
   const feeBps = listing.performance.dynamicFeeBps;
