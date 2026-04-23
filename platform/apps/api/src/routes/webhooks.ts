@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createRunInputDefaults, startRunProcessing } from "../services/runner.js";
 import { normalizeBlockchainWebhook } from "../services/webhook-normalizer.js";
+import { postMarketTradesToWeb } from "../services/market-ingest-client.js";
 import { store } from "../store.js";
 
 function hasValidWebhookSecret(c: { req: { header: (n: string) => string | undefined } }): boolean {
@@ -71,11 +72,25 @@ webhooksRoutes.post("/blockchain", async (c) => {
     startRunProcessing(run.id);
   }
 
+  let marketIngest: {
+    attempted: boolean;
+    ok: boolean;
+    insertedTrades?: number;
+    upsertedCandles?: number;
+    error?: string;
+  } = { attempted: false, ok: true };
+  if (evt.marketTrades && evt.marketTrades.length > 0) {
+    marketIngest.attempted = true;
+    const out = await postMarketTradesToWeb(evt.marketTrades);
+    marketIngest = { attempted: true, ...out };
+  }
+
   return c.json({
     ok: true,
     provider: evt.provider,
     routedUserId: user.id,
     resumedRunIds: runs.map((r) => r.id),
     createdRunId,
+    marketIngest,
   });
 });

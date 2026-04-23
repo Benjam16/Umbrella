@@ -16,6 +16,18 @@ export type WebClient = {
     runId: string,
     anchor: Omit<OnchainAnchor, "runId" | "anchoredAt">,
   ) => Promise<{ anchor: OnchainAnchor; duplicate: boolean }>;
+  postMarketTrades: (
+    trades: Array<{
+      hookId?: string;
+      tokenAddress?: string;
+      side: "buy" | "sell";
+      priceUsd: number;
+      sizeUsd: number;
+      tradedAt?: string;
+      txHash?: string;
+      blockNumber?: number;
+    }>,
+  ) => Promise<{ ok: boolean; insertedTrades: number; upsertedCandles: number }>;
 };
 
 export function createWebClient(): WebClient {
@@ -77,5 +89,39 @@ export function createWebClient(): WebClient {
     };
   }
 
-  return { listPending, loadRunWithEvents, postAnchor };
+  async function postMarketTrades(
+    trades: Array<{
+      hookId?: string;
+      tokenAddress?: string;
+      side: "buy" | "sell";
+      priceUsd: number;
+      sizeUsd: number;
+      tradedAt?: string;
+      txHash?: string;
+      blockNumber?: number;
+    }>,
+  ) {
+    if (!secret) {
+      throw new Error("UMBRELLA_RELAYER_SECRET not set — cannot POST market ingest");
+    }
+    const res = await fetch(`${baseUrl}/api/v1/marketplace/ingest`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
+      body: JSON.stringify({ trades }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`postMarketTrades: http ${res.status} ${text}`);
+    }
+    return (await res.json()) as {
+      ok: boolean;
+      insertedTrades: number;
+      upsertedCandles: number;
+    };
+  }
+
+  return { listPending, loadRunWithEvents, postAnchor, postMarketTrades };
 }

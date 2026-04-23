@@ -17,7 +17,8 @@ export type LiveMarketPayload = {
 };
 
 export type MarketTradeIngest = {
-  hookId: string;
+  hookId?: string;
+  tokenAddress?: string;
   side: "buy" | "sell";
   priceUsd: number;
   sizeUsd: number;
@@ -97,15 +98,31 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
   const supabase = getServerSupabase();
   if (!supabase) throw new Error("supabase not configured");
 
-  const rows = trades.map((t) => ({
-    hook_id: t.hookId,
+  const rows: Array<{
+    hook_id: string;
+    side: "buy" | "sell";
+    price_usd: number;
+    size_usd: number;
+    tx_hash: string | null;
+    block_number: number | null;
+    traded_at: string;
+  }> = [];
+  for (const t of trades) {
+    const hookId =
+      t.hookId ??
+      (t.tokenAddress ? await resolveHookIdForTokenAddress(t.tokenAddress) : null);
+    if (!hookId) continue;
+    rows.push({
+      hook_id: hookId,
     side: t.side,
     price_usd: t.priceUsd,
     size_usd: t.sizeUsd,
     tx_hash: t.txHash ?? null,
     block_number: t.blockNumber ?? null,
     traded_at: t.tradedAt ? new Date(t.tradedAt).toISOString() : new Date().toISOString(),
-  }));
+    });
+  }
+  if (rows.length === 0) return { insertedTrades: 0, upsertedCandles: 0 };
 
   const { data: inserted, error: insertError } = await supabase
     .from("market_trades")
@@ -232,5 +249,20 @@ function minuteBucketIso(ts: string): string {
   const d = new Date(ts);
   d.setUTCSeconds(0, 0);
   return d.toISOString();
+}
+
+async function resolveHookIdForTokenAddress(tokenAddress: string): Promise<string | null> {
+  const supabase = getServerSupabase();
+  if (!supabase) return null;
+  const normalized = tokenAddress.toLowerCase();
+  const { data, error } = await supabase
+    .from("generated_hooks")
+    .select("id")
+    .eq("token_address", normalized)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.id as string | undefined) ?? null;
 }
 

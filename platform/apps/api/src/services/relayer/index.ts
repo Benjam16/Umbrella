@@ -156,6 +156,31 @@ async function processRun(
   };
 
   const posted = await client.postAnchor(run.id, anchorInput);
+  // Feed live market telemetry from anchored mission proofs. This is a
+  // deterministic bootstrap signal until full swap-log indexing is attached.
+  if (!posted.duplicate && process.env.UMBRELLA_MARKET_INGEST_ENABLED !== "false") {
+    try {
+      const trade = toMarketTradeFromProof(anchorInput);
+      if (trade) {
+        await client.postMarketTrades([
+          {
+            tokenAddress: tokenEntry.tokenAddress,
+            side: trade.side,
+            priceUsd: trade.priceUsd,
+            sizeUsd: trade.sizeUsd,
+            tradedAt: new Date().toISOString(),
+            txHash: chainWrite.txHash,
+          },
+        ]);
+      }
+    } catch (err) {
+      console.warn(
+        `[relayer] market ingest skipped for run ${run.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
   return {
     runId: run.id,
     blueprintId: run.blueprintId,
@@ -164,4 +189,20 @@ async function processRun(
     simulated: chainWrite.simulated,
     reason: chainWrite.simulated ? chainWrite.reason : undefined,
   };
+}
+
+function toMarketTradeFromProof(anchor: Omit<OnchainAnchor, "runId" | "anchoredAt">): {
+  side: "buy" | "sell";
+  priceUsd: number;
+  sizeUsd: number;
+} | null {
+  const proof = anchor.proof;
+  if (!proof) return null;
+  const sizeUsd = Math.max(5, proof.revenueCents / 100);
+  // Deterministic pseudo-price anchored to proof fields so repeated replays
+  // produce the same print characteristics.
+  const basePrice = 0.05 + ((proof.successScore % 5000) / 1000);
+  const priceUsd = Number(basePrice.toFixed(6));
+  const side: "buy" | "sell" = proof.status === "succeeded" ? "buy" : "sell";
+  return { side, priceUsd, sizeUsd };
 }

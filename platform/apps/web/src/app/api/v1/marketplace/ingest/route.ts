@@ -6,7 +6,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const tradeSchema = z.object({
-  hookId: z.string().uuid(),
+  hookId: z.string().uuid().optional(),
+  tokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   side: z.enum(["buy", "sell"]),
   priceUsd: z.number().positive(),
   sizeUsd: z.number().positive(),
@@ -17,6 +18,8 @@ const tradeSchema = z.object({
 
 const bodySchema = z.object({
   trades: z.array(tradeSchema).min(1).max(500),
+}).refine((v) => v.trades.every((t) => !!t.hookId || !!t.tokenAddress), {
+  message: "each trade requires hookId or tokenAddress",
 });
 
 /**

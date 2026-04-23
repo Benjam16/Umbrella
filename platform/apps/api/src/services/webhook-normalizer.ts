@@ -11,6 +11,19 @@ export type NormalizedBlockchainWebhook = {
   objective?: string;
   maxCredits?: number;
   payload?: Record<string, unknown>;
+  /**
+   * Optional normalized market prints for hook-token telemetry ingestion.
+   * Expected to be supplied by indexer-style providers in generic payloads.
+   */
+  marketTrades?: Array<{
+    hookId: string;
+    side: "buy" | "sell";
+    priceUsd: number;
+    sizeUsd: number;
+    tradedAt?: string;
+    txHash?: string;
+    blockNumber?: number;
+  }>;
 };
 
 const genericSchema = z.object({
@@ -23,6 +36,19 @@ const genericSchema = z.object({
   objective: z.string().min(8).max(20_000).optional(),
   maxCredits: z.number().int().positive().max(100_000).optional(),
   payload: z.record(z.unknown()).optional(),
+  trades: z
+    .array(
+      z.object({
+        hookId: z.string().uuid(),
+        side: z.enum(["buy", "sell"]),
+        priceUsd: z.number().positive(),
+        sizeUsd: z.number().positive(),
+        tradedAt: z.string().datetime().optional(),
+        txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+        blockNumber: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const alchemySchema = z.object({
@@ -82,7 +108,11 @@ function networkToChainId(network?: string): number | undefined {
 export function normalizeBlockchainWebhook(input: unknown): NormalizedBlockchainWebhook | null {
   const generic = genericSchema.safeParse(input);
   if (generic.success) {
-    return { provider: "generic", ...generic.data };
+    return {
+      provider: "generic",
+      ...generic.data,
+      marketTrades: generic.data.trades,
+    };
   }
 
   const alchemy = alchemySchema.safeParse(input);
