@@ -128,6 +128,58 @@ Add `[[services]].concurrency.type = "connections"` and a high
 - Expose port `3040`
 - Environment: copy everything from `.env.example`
 
+## Market indexer ops
+
+Use these relayer env vars to run one market indexer worker per chain:
+
+```bash
+# Comma-separated chain fan-out (preferred)
+UMBRELLA_MARKET_CHAIN_IDS=8453,84532
+
+# Backwards-compatible single-chain fallback (used when CHAIN_IDS is unset)
+UMBRELLA_MARKET_CHAIN_ID=8453
+
+# Optional tuning
+UMBRELLA_MARKET_LOOKBACK_BLOCKS=400
+UMBRELLA_MARKET_MAX_TRADES_PER_TICK=250
+```
+
+The worker creates an independent cursor per chain (`market-swap-indexer:<chainId>`), so restarts and retries continue safely without cross-chain cursor collisions.
+
+### Dedupe audit SQL
+
+Run this in Supabase SQL editor to measure ingest dedupe effectiveness:
+
+```sql
+with keyed as (
+  select
+    source_chain_id,
+    hook_id,
+    idempotency_key,
+    count(*) as rows_per_key
+  from public.market_trades
+  where idempotency_key is not null
+  group by source_chain_id, hook_id, idempotency_key
+),
+rollup as (
+  select
+    coalesce(source_chain_id, -1) as source_chain_id,
+    count(*) as unique_keys,
+    sum(rows_per_key) as total_rows,
+    sum(case when rows_per_key > 1 then rows_per_key - 1 else 0 end) as duplicate_rows
+  from keyed
+  group by coalesce(source_chain_id, -1)
+)
+select
+  source_chain_id,
+  total_rows,
+  unique_keys,
+  duplicate_rows,
+  round((duplicate_rows::numeric / nullif(total_rows, 0)) * 100, 4) as duplicate_row_pct
+from rollup
+order by source_chain_id;
+```
+
 ### Vercel (fallback)
 
 Still works for the marketing site; the `/api/v1/runs/[id]/events` SSE stream

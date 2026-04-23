@@ -103,6 +103,58 @@ Verification command safety knobs (`apps/api/.env`):
 2. **Desktop** — optional: create `platform/apps/desktop/.env` with `VITE_API_URL=...` if the API is not on `http://127.0.0.1:8787`.  
 3. If you skip `.env` files entirely, the defaults in code still work for local dev (including dev signup, unless you set `UMBRELLA_ALLOW_DEV_SIGNUP=false`).
 
+## Market indexer ops
+
+Use these relayer env vars to run one market indexer worker per chain:
+
+```bash
+# Comma-separated chain fan-out (preferred)
+UMBRELLA_MARKET_CHAIN_IDS=8453,84532
+
+# Backwards-compatible single-chain fallback (used when CHAIN_IDS is unset)
+UMBRELLA_MARKET_CHAIN_ID=8453
+
+# Optional tuning
+UMBRELLA_MARKET_LOOKBACK_BLOCKS=400
+UMBRELLA_MARKET_MAX_TRADES_PER_TICK=250
+```
+
+The worker creates an independent cursor per chain (`market-swap-indexer:<chainId>`), so restarts and retries continue safely without cross-chain cursor collisions.
+
+### Dedupe audit SQL
+
+Run this in Supabase SQL editor to measure ingest dedupe effectiveness:
+
+```sql
+with keyed as (
+  select
+    source_chain_id,
+    hook_id,
+    idempotency_key,
+    count(*) as rows_per_key
+  from public.market_trades
+  where idempotency_key is not null
+  group by source_chain_id, hook_id, idempotency_key
+),
+rollup as (
+  select
+    coalesce(source_chain_id, -1) as source_chain_id,
+    count(*) as unique_keys,
+    sum(rows_per_key) as total_rows,
+    sum(case when rows_per_key > 1 then rows_per_key - 1 else 0 end) as duplicate_rows
+  from keyed
+  group by coalesce(source_chain_id, -1)
+)
+select
+  source_chain_id,
+  total_rows,
+  unique_keys,
+  duplicate_rows,
+  round((duplicate_rows::numeric / nullif(total_rows, 0)) * 100, 4) as duplicate_row_pct
+from rollup
+order by source_chain_id;
+```
+
 ## Next steps (not implemented here)
 
 - Add complexity-based routing/escalation policy (Gemma-first -> frontier model when needed)  
