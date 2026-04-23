@@ -28,7 +28,10 @@ export function startRelayerWorker(): void {
   );
   const service = createRelayerService();
   const webClient = createWebClient();
-  const marketIndexer = createMarketSwapIndexer(webClient);
+  const indexerChainIds = parseIndexerChains();
+  const marketIndexers = indexerChainIds.map((chainId) =>
+    createMarketSwapIndexer(webClient, { chainId }),
+  );
 
   let running = false;
   const tick = async () => {
@@ -36,7 +39,13 @@ export function startRelayerWorker(): void {
     running = true;
     try {
       const result = await service.tick();
-      const market = await marketIndexer.tick();
+      let marketScanned = 0;
+      let marketEmitted = 0;
+      for (const idx of marketIndexers) {
+        const m = await idx.tick();
+        marketScanned += m.scannedTargets;
+        marketEmitted += m.emittedTrades;
+      }
       if (result.anchored > 0 || result.failed > 0) {
         console.log(
           `[relayer] tick · scanned=${result.scanned} anchored=${result.anchored} skipped=${result.skipped} failed=${result.failed}`,
@@ -55,9 +64,9 @@ export function startRelayerWorker(): void {
           }
         }
       }
-      if (market.emittedTrades > 0) {
+      if (marketEmitted > 0) {
         console.log(
-          `[relayer] market-indexer · targets=${market.scannedTargets} emittedTrades=${market.emittedTrades}`,
+          `[relayer] market-indexer · targets=${marketScanned} emittedTrades=${marketEmitted}`,
         );
       }
     } catch (err) {
@@ -75,4 +84,14 @@ export function startRelayerWorker(): void {
   );
   void tick();
   setInterval(tick, intervalMs);
+}
+
+function parseIndexerChains(): number[] {
+  const raw = process.env.UMBRELLA_MARKET_CHAIN_IDS?.trim();
+  if (!raw) return [Number(process.env.UMBRELLA_MARKET_CHAIN_ID ?? 8453)];
+  const out = raw
+    .split(",")
+    .map((v) => Number(v.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return out.length ? Array.from(new Set(out)) : [8453];
 }

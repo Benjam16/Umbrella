@@ -23,6 +23,9 @@ export type WebClient = {
       side: "buy" | "sell";
       priceUsd: number;
       sizeUsd: number;
+      chainId?: number;
+      logIndex?: number;
+      idempotencyKey?: string;
       tradedAt?: string;
       txHash?: string;
       blockNumber?: number;
@@ -102,6 +105,9 @@ export function createWebClient(): WebClient {
       side: "buy" | "sell";
       priceUsd: number;
       sizeUsd: number;
+      chainId?: number;
+      logIndex?: number;
+      idempotencyKey?: string;
       tradedAt?: string;
       txHash?: string;
       blockNumber?: number;

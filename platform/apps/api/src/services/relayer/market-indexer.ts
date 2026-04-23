@@ -33,10 +33,13 @@ const SWAP_V3_EVENT = parseAbiItem(
 const TOKEN0_FN = parseAbiItem("function token0() view returns (address)");
 const TOKEN1_FN = parseAbiItem("function token1() view returns (address)");
 
-export function createMarketSwapIndexer(client: WebClient): MarketIndexer {
+export function createMarketSwapIndexer(
+  client: WebClient,
+  opts: { chainId?: number } = {},
+): MarketIndexer {
   const baseUrl =
     process.env.UMBRELLA_WEB_BASE_URL?.replace(/\/+$/, "") ?? "http://localhost:3040";
-  const chainId = Number(process.env.UMBRELLA_MARKET_CHAIN_ID ?? 8453);
+  const chainId = Number(opts.chainId ?? process.env.UMBRELLA_MARKET_CHAIN_ID ?? 8453);
   const chain = chainId === 84532 ? baseSepolia : base;
   const rpc =
     chainId === 84532
@@ -77,6 +80,9 @@ export function createMarketSwapIndexer(client: WebClient): MarketIndexer {
       side: "buy" | "sell";
       priceUsd: number;
       sizeUsd: number;
+      chainId?: number;
+      logIndex?: number;
+      idempotencyKey?: string;
       tradedAt: string;
       txHash?: string;
       blockNumber?: number;
@@ -121,6 +127,12 @@ export function createMarketSwapIndexer(client: WebClient): MarketIndexer {
           side: p.side,
           priceUsd: t.priceUsd,
           sizeUsd,
+          chainId,
+          logIndex: p.logIndex,
+          idempotencyKey:
+            p.txHash && p.logIndex !== undefined
+              ? `${t.hookId}:${chainId}:${p.txHash.toLowerCase()}:${p.logIndex}:${p.side}`
+              : undefined,
           tradedAt: ts,
           txHash: p.txHash,
           blockNumber: Number(p.blockNumber),
@@ -196,6 +208,7 @@ async function readPoolSwapEvents(
     side: "buy" | "sell";
     txHash?: Hex;
     blockNumber?: bigint;
+    logIndex?: number;
     sizeToken?: number;
   }> = [];
 
@@ -231,6 +244,7 @@ async function readPoolSwapEvents(
       side,
       txHash: l.transactionHash ?? undefined,
       blockNumber: l.blockNumber ?? undefined,
+      logIndex: l.logIndex ?? undefined,
       sizeToken,
     });
   }
@@ -247,6 +261,7 @@ async function readPoolSwapEvents(
       side,
       txHash: l.transactionHash ?? undefined,
       blockNumber: l.blockNumber ?? undefined,
+      logIndex: l.logIndex ?? undefined,
       sizeToken,
     });
   }
@@ -295,6 +310,7 @@ function mapTransferLogs(
     side,
     txHash: l.transactionHash ?? undefined,
     blockNumber: l.blockNumber ?? undefined,
+    logIndex: (l as { logIndex?: number | null }).logIndex ?? undefined,
     sizeToken: Number(formatUnits(l.args.value ?? 0n, decimals)),
   }));
 }

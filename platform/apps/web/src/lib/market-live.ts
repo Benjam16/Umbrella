@@ -22,6 +22,9 @@ export type MarketTradeIngest = {
   side: "buy" | "sell";
   priceUsd: number;
   sizeUsd: number;
+  chainId?: number;
+  logIndex?: number;
+  idempotencyKey?: string;
   tradedAt?: string;
   txHash?: string;
   blockNumber?: number;
@@ -103,6 +106,9 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
     side: "buy" | "sell";
     price_usd: number;
     size_usd: number;
+    source_chain_id: number | null;
+    log_index: number | null;
+    idempotency_key: string | null;
     tx_hash: string | null;
     block_number: number | null;
     traded_at: string;
@@ -114,19 +120,31 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
     if (!hookId) continue;
     rows.push({
       hook_id: hookId,
-    side: t.side,
-    price_usd: t.priceUsd,
-    size_usd: t.sizeUsd,
-    tx_hash: t.txHash ?? null,
-    block_number: t.blockNumber ?? null,
-    traded_at: t.tradedAt ? new Date(t.tradedAt).toISOString() : new Date().toISOString(),
+      side: t.side,
+      price_usd: t.priceUsd,
+      size_usd: t.sizeUsd,
+      source_chain_id: t.chainId ?? null,
+      log_index: Number.isInteger(t.logIndex) ? t.logIndex! : null,
+      idempotency_key:
+        t.idempotencyKey ??
+        buildIdempotencyKey({
+          hookId,
+          chainId: t.chainId ?? null,
+          txHash: t.txHash ?? null,
+          logIndex: Number.isInteger(t.logIndex) ? t.logIndex! : null,
+          side: t.side,
+          tradedAt: t.tradedAt ?? null,
+        }),
+      tx_hash: t.txHash ?? null,
+      block_number: t.blockNumber ?? null,
+      traded_at: t.tradedAt ? new Date(t.tradedAt).toISOString() : new Date().toISOString(),
     });
   }
   if (rows.length === 0) return { insertedTrades: 0, upsertedCandles: 0 };
 
   const { data: inserted, error: insertError } = await supabase
     .from("market_trades")
-    .insert(rows)
+    .upsert(rows, { onConflict: "idempotency_key", ignoreDuplicates: true })
     .select("hook_id, price_usd, size_usd, traded_at");
   if (insertError) throw new Error(insertError.message);
 
@@ -184,6 +202,22 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
   }
 
   return { insertedTrades: inserted?.length ?? rows.length, upsertedCandles };
+}
+
+function buildIdempotencyKey(args: {
+  hookId: string;
+  chainId: number | null;
+  txHash: string | null;
+  logIndex: number | null;
+  side: "buy" | "sell";
+  tradedAt: string | null;
+}): string {
+  if (args.txHash) {
+    const chain = args.chainId ?? 0;
+    const idx = args.logIndex ?? -1;
+    return `${args.hookId}:${chain}:${args.txHash.toLowerCase()}:${idx}:${args.side}`;
+  }
+  return `${args.hookId}:ts:${args.tradedAt ?? "na"}:${args.side}`;
 }
 
 export async function rebuildCandlesFromTrades(hookId: string): Promise<{
