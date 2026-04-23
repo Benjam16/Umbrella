@@ -1,4 +1,6 @@
 import { createRelayerService } from "./relayer/index.js";
+import { createMarketSwapIndexer } from "./relayer/market-indexer.js";
+import { createWebClient } from "./relayer/client.js";
 
 /**
  * Long-lived RelayerService loop. Drains pending (unanchored) completed
@@ -25,6 +27,8 @@ export function startRelayerWorker(): void {
     Number(process.env.UMBRELLA_RELAYER_INTERVAL_MS ?? 15_000),
   );
   const service = createRelayerService();
+  const webClient = createWebClient();
+  const marketIndexer = createMarketSwapIndexer(webClient);
 
   let running = false;
   const tick = async () => {
@@ -32,6 +36,7 @@ export function startRelayerWorker(): void {
     running = true;
     try {
       const result = await service.tick();
+      const market = await marketIndexer.tick();
       if (result.anchored > 0 || result.failed > 0) {
         console.log(
           `[relayer] tick · scanned=${result.scanned} anchored=${result.anchored} skipped=${result.skipped} failed=${result.failed}`,
@@ -49,6 +54,11 @@ export function startRelayerWorker(): void {
             );
           }
         }
+      }
+      if (market.emittedTrades > 0) {
+        console.log(
+          `[relayer] market-indexer · targets=${market.scannedTargets} emittedTrades=${market.emittedTrades}`,
+        );
       }
     } catch (err) {
       console.error(
