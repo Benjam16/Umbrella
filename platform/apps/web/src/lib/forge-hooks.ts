@@ -116,7 +116,17 @@ export async function generateHookWithKimi(prompt: string): Promise<{ code: stri
     "https://api.moonshot.cn/v1"
   ).replace(/\/$/, "");
   const model = process.env.KIMI_MODEL?.trim() || "kimi-k2.5";
-  const apiKey = requiredEnv("KIMI_API_KEY");
+  const apiKey = process.env.KIMI_API_KEY?.trim();
+  const allowFallback = (process.env.UMBRELLA_FORGE_ALLOW_TEMPLATE_FALLBACK?.trim() ?? "true")
+    .toLowerCase() !== "false";
+
+  if (!apiKey) {
+    if (!allowFallback) throw new Error("KIMI_API_KEY is required");
+    return {
+      code: templateFallbackHook(prompt),
+      model: "template-fallback:no-kimi-key",
+    };
+  }
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -139,11 +149,48 @@ export async function generateHookWithKimi(prompt: string): Promise<{ code: stri
     }),
   });
   const raw = await res.text();
-  if (!res.ok) throw new Error(`kimi request failed: ${res.status} ${raw.slice(0, 200)}`);
+  if (!res.ok) {
+    const authFailure =
+      res.status === 401 ||
+      /invalid[_\s-]?authentication|unauthorized|invalid api key/i.test(raw);
+    if (authFailure && allowFallback) {
+      return {
+        code: templateFallbackHook(prompt),
+        model: `template-fallback:kimi-auth-${res.status}`,
+      };
+    }
+    throw new Error(`kimi request failed: ${res.status} ${raw.slice(0, 200)}`);
+  }
   const json = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> };
   const code = json.choices?.[0]?.message?.content?.trim() || "";
   if (!code) throw new Error("kimi returned empty code");
   return { code, model };
+}
+
+function templateFallbackHook(prompt: string): string {
+  const promptHash = createHmac("sha256", "umbrella-template-fallback")
+    .update(prompt)
+    .digest("hex")
+    .slice(0, 12);
+  return `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+/**
+ * Umbrella fallback hook template.
+ * Used when remote model auth is unavailable so forge can still complete.
+ */
+contract UmbrellaGeneratedHook_${promptHash} {
+    string public missionHash = "${promptHash}";
+    string public metadata = "Generated via template fallback";
+
+    event MissionExecuted(address indexed caller, bytes data);
+
+    function execute(bytes calldata data) external returns (bool) {
+        emit MissionExecuted(msg.sender, data);
+        return true;
+    }
+}
+`;
 }
 
 export async function insertGeneratedHook(row: {
