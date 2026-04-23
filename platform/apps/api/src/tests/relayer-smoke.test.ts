@@ -188,6 +188,12 @@ test("RelayerService.tick anchors a run and is idempotent", async () => {
     async postMarketTrades() {
       return { ok: true, insertedTrades: 1, upsertedCandles: 1 };
     },
+    async getIndexerCursor() {
+      return { cursorBlock: 0n, meta: {} };
+    },
+    async setIndexerCursor() {
+      return;
+    },
   };
 
   const service = createRelayerService({ client: stub });
@@ -224,6 +230,12 @@ test("RelayerService skips runs with no registered AgentToken", async () => {
     },
     async postMarketTrades() {
       throw new Error("should not ingest trades for unregistered blueprint");
+    },
+    async getIndexerCursor() {
+      return { cursorBlock: 0n, meta: {} };
+    },
+    async setIndexerCursor() {
+      return;
     },
   };
   const service = createRelayerService({ client: stub });

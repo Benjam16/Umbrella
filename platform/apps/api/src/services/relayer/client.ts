@@ -28,6 +28,12 @@ export type WebClient = {
       blockNumber?: number;
     }>,
   ) => Promise<{ ok: boolean; insertedTrades: number; upsertedCandles: number }>;
+  getIndexerCursor: (id: string) => Promise<{ cursorBlock: bigint; meta: Record<string, unknown> }>;
+  setIndexerCursor: (
+    id: string,
+    cursorBlock: bigint,
+    meta?: Record<string, unknown>,
+  ) => Promise<void>;
 };
 
 export function createWebClient(): WebClient {
@@ -123,5 +129,63 @@ export function createWebClient(): WebClient {
     };
   }
 
-  return { listPending, loadRunWithEvents, postAnchor, postMarketTrades };
+  async function getIndexerCursor(id: string): Promise<{
+    cursorBlock: bigint;
+    meta: Record<string, unknown>;
+  }> {
+    if (!secret) {
+      throw new Error("UMBRELLA_RELAYER_SECRET not set — cannot GET indexer cursor");
+    }
+    const res = await fetch(
+      `${baseUrl}/api/v1/marketplace/indexer-state?id=${encodeURIComponent(id)}`,
+      { headers: authHeaders },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`getIndexerCursor(${id}): http ${res.status} ${text}`);
+    }
+    const body = (await res.json()) as {
+      cursorBlock?: number;
+      meta?: Record<string, unknown>;
+    };
+    return {
+      cursorBlock: BigInt(Math.max(0, Number(body.cursorBlock ?? 0))),
+      meta: body.meta ?? {},
+    };
+  }
+
+  async function setIndexerCursor(
+    id: string,
+    cursorBlock: bigint,
+    meta: Record<string, unknown> = {},
+  ): Promise<void> {
+    if (!secret) {
+      throw new Error("UMBRELLA_RELAYER_SECRET not set — cannot POST indexer cursor");
+    }
+    const res = await fetch(`${baseUrl}/api/v1/marketplace/indexer-state`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
+      body: JSON.stringify({
+        id,
+        cursorBlock: Number(cursorBlock),
+        meta,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`setIndexerCursor(${id}): http ${res.status} ${text}`);
+    }
+  }
+
+  return {
+    listPending,
+    loadRunWithEvents,
+    postAnchor,
+    postMarketTrades,
+    getIndexerCursor,
+    setIndexerCursor,
+  };
 }
