@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { generateHookWithKimi, insertGeneratedHook } from "@/lib/forge-hooks";
+import {
+  generateHookWithKimi,
+  insertGeneratedHook,
+  verifyPaymentFromWebhook,
+} from "@/lib/forge-hooks";
 
 export const runtime = "nodejs";
 
@@ -57,6 +61,9 @@ export async function POST(request: Request) {
   if (name.length < 2) return badRequest("identity.name too short");
   if (symbol.length < 2) return badRequest("identity.symbol too short");
   if (prompt.length < 12) return badRequest("mission.prompt too short");
+  if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    return badRequest("payment required: txHash must be a 0x 64-char hash");
+  }
 
   const composed = [
     `Agent: ${name} (${symbol})`,
@@ -71,10 +78,15 @@ export async function POST(request: Request) {
     .join("\n");
 
   try {
+    const payment = await verifyPaymentFromWebhook({ txHash });
+    if (payment.from.toLowerCase() !== wallet.toLowerCase()) {
+      return badRequest("payment tx sender must match walletAddress");
+    }
+
     const { code, model } = await generateHookWithKimi(composed);
     const row = await insertGeneratedHook({
       walletAddress: wallet,
-      txHash: txHash || `direct-${Date.now().toString(16)}`,
+      txHash,
       prompt: composed,
       solidityCode: code,
       model,

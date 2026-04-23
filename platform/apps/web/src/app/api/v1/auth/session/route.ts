@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   createWalletSession,
+  readWalletSessionFromCookie,
   verifyAuthChallenge,
   walletSessionCookie,
 } from "@/lib/wallet-session";
@@ -14,6 +15,11 @@ const schema = z.object({
   signature: z.string().regex(/^0x[a-fA-F0-9]+$/),
   challengeToken: z.string().min(10),
 });
+
+export async function GET(req: Request) {
+  const wallet = readWalletSessionFromCookie(req.headers.get("cookie"));
+  return Response.json({ ok: true, wallet });
+}
 
 export async function POST(req: Request) {
   const json = await req.json().catch(() => null);

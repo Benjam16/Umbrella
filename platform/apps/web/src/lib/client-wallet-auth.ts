@@ -13,6 +13,11 @@ export async function ensureWalletSession(args: {
   signMessageAsync: (args: { message: string }) => Promise<`0x${string}`>;
 }) {
   const walletAddress = args.walletAddress.toLowerCase();
+  const existing = await fetch("/api/v1/auth/session", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null) as { wallet?: string } | null;
+  if (existing?.wallet?.toLowerCase() === walletAddress) return;
+
   const challengeRes = await fetch("/api/v1/auth/challenge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

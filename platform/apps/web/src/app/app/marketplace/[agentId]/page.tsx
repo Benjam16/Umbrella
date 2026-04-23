@@ -32,6 +32,8 @@ export default function AgentProfilePage() {
   >([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveDelta, setLiveDelta] = useState<number | null>(null);
+  const [liveState, setLiveState] = useState<"live" | "warmup" | "synthetic" | null>(null);
+  const [liveMessage, setLiveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,11 +75,15 @@ export default function AgentProfilePage() {
         );
         if (!res.ok) return;
         const data = (await res.json()) as {
+          state?: "live" | "warmup" | "synthetic";
+          message?: string;
           live?: { priceUsd?: number; delta?: number };
           spark?: Array<{ t: number; price: number }>;
           tape?: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }>;
         };
         if (cancelled) return;
+        setLiveState(data.state ?? null);
+        setLiveMessage(data.message ?? null);
         if (Array.isArray(data.spark)) setLiveSpark(data.spark);
         if (Array.isArray(data.tape)) setTradeTape(data.tape.slice(0, 18));
         if (typeof data.live?.priceUsd === "number") setLivePrice(data.live.priceUsd);
@@ -160,6 +166,11 @@ export default function AgentProfilePage() {
                 {formatPct(shownDelta)} · live tick ·{" "}
                 {formatPct(listing.price.change24h)} · 24h
               </div>
+              {liveState === "warmup" && (
+                <div className="font-mono text-[10px] uppercase tracking-widest text-signal-amber">
+                  {liveMessage ?? "Awaiting first on-chain event"}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -269,7 +280,9 @@ export default function AgentProfilePage() {
                 <ul className="max-h-[220px] space-y-1 overflow-auto">
                   {shownTape.length === 0 && (
                     <li className="rounded border border-zinc-800/70 bg-ink-950/60 px-2 py-2 text-center text-zinc-500">
-                      Waiting for trade prints...
+                      {liveState === "warmup"
+                        ? (liveMessage ?? "Awaiting first on-chain event")
+                        : "Waiting for trade prints..."}
                     </li>
                   )}
                   {shownTape.map((t) => (

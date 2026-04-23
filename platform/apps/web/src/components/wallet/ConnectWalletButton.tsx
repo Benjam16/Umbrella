@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSignMessage, useSwitchChain } from "wagmi";
 import { base, baseSepolia } from "wagmi/chains";
+import { ensureWalletSession } from "@/lib/client-wallet-auth";
 
 type Size = "sm" | "md";
 
@@ -29,6 +30,7 @@ export function ConnectWalletButton({ size = "md", compact }: Props) {
   const { address, chainId, isConnected } = useAccount();
   const { connectors, connect, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
+  const { signMessageAsync } = useSignMessage();
   const { switchChain, isPending: switching } = useSwitchChain();
 
   const [mounted, setMounted] = useState(false);
@@ -37,6 +39,21 @@ export function ConnectWalletButton({ size = "md", compact }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
+
+  const [sessionWallet, setSessionWallet] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setSessionWallet(null);
+      return;
+    }
+    const wallet = address.toLowerCase();
+    if (sessionWallet === wallet) return;
+    void ensureWalletSession({ walletAddress: wallet, signMessageAsync })
+      .then(() => setSessionWallet(wallet))
+      .catch(() => {
+        // Keep connect UX smooth; protected endpoints will still request auth.
+      });
+  }, [isConnected, address, signMessageAsync, sessionWallet]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {

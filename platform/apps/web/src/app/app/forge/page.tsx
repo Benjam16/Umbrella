@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAccount } from "wagmi";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
@@ -37,6 +38,7 @@ export default function ForgePage() {
 
 function ForgeView() {
   const router = useRouter();
+  const { address: connectedWallet, isConnected } = useAccount();
   const searchParams = useSearchParams();
   const templateId = searchParams?.get("template") ?? null;
   const [wallet, setWallet] = useState("");
@@ -127,6 +129,11 @@ function ForgeView() {
   }, [normalizedWallet]);
 
   async function handleSubmit(result: WizardResult) {
+    const txHash = await requestForgePayment(result.walletAddress, {
+      connectedWallet,
+      isConnected,
+    });
+
     setWallet(result.walletAddress);
 
     // Stash an optimistic "Initializing..." card and jump to the workspace
@@ -150,6 +157,7 @@ function ForgeView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...result,
+          txHash,
           // If the wizard was seeded via Marketplace → "Fork this agent",
           // persist the parent id so the original creator gets fork credit.
           forkedFrom: template?.id ?? null,
@@ -280,4 +288,65 @@ function ForgeView() {
       </main>
     </>
   );
+}
+
+async function requestForgePayment(
+  walletAddress: string,
+  ctx: { connectedWallet?: string; isConnected: boolean },
+): Promise<string> {
+  if (!ctx.isConnected || !ctx.connectedWallet) {
+    throw new Error("Connect wallet before forging.");
+  }
+  if (ctx.connectedWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new Error("Wallet address must match connected wallet for payment.");
+  }
+
+  const quoteRes = await fetch("/api/v1/forge/payment/quote", { cache: "no-store" });
+  const quote = (await quoteRes.json().catch(() => ({}))) as {
+    treasuryAddress?: string;
+    minPaymentHex?: string;
+    error?: string;
+  };
+  if (!quoteRes.ok || !quote.treasuryAddress || !quote.minPaymentHex) {
+    throw new Error(quote.error || "forge payment config unavailable");
+  }
+
+  const eth = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } })
+    .ethereum;
+  if (!eth?.request) throw new Error("No injected wallet provider found.");
+
+  const txHash = (await eth.request({
+    method: "eth_sendTransaction",
+    params: [
+      {
+        from: walletAddress,
+        to: quote.treasuryAddress,
+        value: quote.minPaymentHex,
+      },
+    ],
+  })) as string;
+
+  if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    throw new Error("payment transaction did not return a valid tx hash");
+  }
+
+  await waitForReceipt(eth, txHash);
+  return txHash;
+}
+
+async function waitForReceipt(
+  eth: { request: (args: unknown) => Promise<unknown> },
+  txHash: string,
+): Promise<void> {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const receipt = (await eth.request({
+      method: "eth_getTransactionReceipt",
+      params: [txHash],
+    })) as { status?: string } | null;
+    if (receipt?.status === "0x1") return;
+    if (receipt?.status === "0x0") throw new Error("payment transaction failed on-chain");
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("payment confirmation timeout. Please retry forge in a moment.");
 }

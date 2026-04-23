@@ -1,6 +1,7 @@
 import { listPublicHooks } from "@/lib/forge-hooks";
 import { enrichListingWithSyntheticMarket } from "@/lib/marketplace";
 import { getPersistedLiveMarket } from "@/lib/market-live";
+import { getServerSupabase } from "@umbrella/runner/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(
         {
           id: row.id,
           symbol: inferSymbol(row.prompt, row.id),
+          state: "live",
           live: {
             priceUsd: persisted.priceUsd,
             delta: persisted.delta,
@@ -39,6 +41,27 @@ export async function GET(
         { headers: { "Cache-Control": "no-store" } },
       );
     }
+
+    const warmup = await getWarmupState(row.id, row.created_at);
+    if (warmup) {
+      return Response.json(
+        {
+          id: row.id,
+          symbol: inferSymbol(row.prompt, row.id),
+          state: "warmup",
+          message: warmup.message,
+          live: {
+            priceUsd: warmup.priceUsd,
+            delta: 0,
+            updatedAt: Date.now(),
+          },
+          spark: warmup.spark,
+          tape: warmup.tape,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const listing = enrichListingWithSyntheticMarket(
       toListing(row),
       `${row.id}:${row.prompt ?? ""}`,
@@ -52,6 +75,7 @@ export async function GET(
       {
         id: listing.id,
         symbol: listing.symbol,
+        state: "synthetic",
         live: {
           priceUsd: last?.price ?? listing.price.usd,
           delta,
@@ -170,5 +194,73 @@ function inferName(prompt: string | null, symbol: string): string {
   const match = prompt.match(/Agent:\s*([^()\n]{2,60})/i);
   if (match?.[1]) return match[1].trim();
   return `Agent ${symbol}`;
+}
+
+async function getWarmupState(
+  hookId: string,
+  createdAtIso: string,
+): Promise<{
+  message: string;
+  priceUsd: number;
+  spark: Array<{ t: number; price: number }>;
+  tape: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }>;
+} | null> {
+  const supabase = getServerSupabase();
+  if (!supabase) return null;
+
+  const [{ count, error: countErr }, { data: latestTrade, error: tradeErr }] = await Promise.all([
+    supabase
+      .from("market_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("hook_id", hookId),
+    supabase
+      .from("market_trades")
+      .select("id, side, price_usd, size_usd, traded_at")
+      .eq("hook_id", hookId)
+      .order("traded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (countErr) throw new Error(countErr.message);
+  if (tradeErr) throw new Error(tradeErr.message);
+
+  const tradeCount = count ?? 0;
+  const createdAt = new Date(createdAtIso).getTime();
+  const isFresh = Number.isFinite(createdAt) && Date.now() - createdAt < 48 * 60 * 60 * 1000;
+
+  if (tradeCount === 0 && !isFresh) return null;
+
+  const trade = latestTrade as
+    | {
+        id: string;
+        side: "buy" | "sell";
+        price_usd: number | string;
+        size_usd: number | string;
+        traded_at: string;
+      }
+    | null;
+  const price = trade ? Number(trade.price_usd) : 0;
+  const ts = trade ? new Date(trade.traded_at).getTime() : Date.now();
+  const tape = trade
+    ? [
+        {
+          id: trade.id,
+          side: trade.side === "buy" ? ("BUY" as const) : ("SELL" as const),
+          price,
+          size: Number(trade.size_usd),
+          ts,
+        },
+      ]
+    : [];
+
+  return {
+    message:
+      tradeCount > 0
+        ? "Indexer warm-up: finalizing first candle from live trades."
+        : "Awaiting first on-chain event",
+    priceUsd: Number.isFinite(price) ? price : 0,
+    spark: price > 0 ? [{ t: ts, price }] : [],
+    tape,
+  };
 }
 
