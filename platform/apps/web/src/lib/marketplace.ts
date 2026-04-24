@@ -89,6 +89,25 @@ export type AgentListing = {
    * `forked_from` column added in migration 0003.
    */
   forksCount?: number;
+  /**
+   * Pump.fun-style bonding curve metadata. Populated once the launch
+   * orchestrator has deployed the curve. Stages:
+   *   - "pending"    : launch underway, curve not yet live
+   *   - "deploying"  : factory tx seen, curve deploy in progress
+   *   - "active"     : curve trading is open
+   *   - "graduated"  : threshold crossed; v4 pool is live
+   *   - "failed"     : deploy failed, surfaced as deploy_error
+   */
+  curve?: {
+    address: string | null;
+    chainId: number | null;
+    stage: "pending" | "deploying" | "active" | "graduated" | "failed";
+    ethReserveWei: string;
+    graduationThresholdWei: string;
+    progress: number;
+    deployError: string | null;
+    verifiedAt: string | null;
+  };
 };
 
 export type AgentCategoryMeta = {

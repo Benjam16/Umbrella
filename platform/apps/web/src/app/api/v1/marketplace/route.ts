@@ -1,5 +1,6 @@
 import { countForksForMany, listPublicHooks } from "@/lib/forge-hooks";
-import { enrichListingWithSyntheticMarket, type AgentListing } from "@/lib/marketplace";
+import { defaultLaunchChainId, getLaunchConfig } from "@/lib/launch/chain-config";
+import type { AgentListing } from "@/lib/marketplace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,36 +9,41 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/marketplace
  *
  * Real data only: returns listings derived from `generated_hooks` where the
- * creator has flipped `is_public = true`. No seeded demo rows.
+ * creator has flipped `is_public = true`. Rows without a canonical
+ * `token_address` are filtered out so the marketplace never routes traders
+ * to a fake address.
  *
- * On-chain performance metrics (price, revenue, missions) come online in a
- * later phase when the RelayerService + UmbrellaAgentToken indexer is live.
- * Until then the returned shape includes zeroed performance fields — the UI
- * already renders a blank state for those safely.
+ * Each row includes the pump.fun-style curve metadata (stage, progress,
+ * graduation threshold) populated by the launch orchestrator + indexer.
  */
 export async function GET() {
-  let broadcasts: AgentListing[] = [];
+  let listings: AgentListing[] = [];
+  let graduationThresholdWei = "0";
+  try {
+    graduationThresholdWei = getLaunchConfig(defaultLaunchChainId()).graduationThresholdWei.toString();
+  } catch {
+    graduationThresholdWei = "0";
+  }
+
   try {
     const rows = await listPublicHooks(60);
-    broadcasts = rows.map((row) =>
-      enrichListingWithSyntheticMarket(toBroadcastListing(row), `${row.id}:${row.prompt ?? ""}`),
-    );
-    // One round-trip to fetch fork counts for the whole page, rather than
-    // N queries from each card on the client.
-    if (broadcasts.length > 0) {
-      const counts = await countForksForMany(broadcasts.map((l) => l.id));
-      for (const l of broadcasts) {
+    listings = rows
+      .filter((row) => /^0x[a-fA-F0-9]{40}$/.test(row.token_address ?? ""))
+      .map((row) => toListing(row, graduationThresholdWei));
+    if (listings.length > 0) {
+      const counts = await countForksForMany(listings.map((l) => l.id));
+      for (const l of listings) {
         l.forksCount = counts[l.id] ?? 0;
       }
     }
   } catch {
-    broadcasts = [];
+    listings = [];
   }
 
   return Response.json(
     {
-      listings: broadcasts,
-      broadcastCount: broadcasts.length,
+      listings,
+      broadcastCount: listings.length,
       updatedAt: Date.now(),
     },
     {
@@ -46,11 +52,7 @@ export async function GET() {
   );
 }
 
-/**
- * Map a raw `generated_hooks` row into the `AgentListing` shape the UI
- * expects. On-chain metrics are zeroed; the indexer will populate them.
- */
-function toBroadcastListing(row: {
+type RowWithCurve = {
   id: string;
   wallet_address: string;
   model: string;
@@ -59,10 +61,19 @@ function toBroadcastListing(row: {
   token_address: string | null;
   pool_address: string | null;
   hook_address: string | null;
-}): AgentListing {
+  chain_id?: number | null;
+  curve_address?: string | null;
+  curve_stage?: string | null;
+  verified_at?: string | null;
+  deploy_error?: string | null;
+};
+
+function toListing(row: RowWithCurve, thresholdWei: string): AgentListing {
   const symbol = inferSymbol(row.prompt, row.id);
   const name = inferName(row.prompt, symbol);
   const createdAtMs = new Date(row.created_at).getTime();
+  const stage = normalizeStage(row.curve_stage);
+
   return {
     id: row.id,
     symbol,
@@ -77,17 +88,14 @@ function toBroadcastListing(row: {
     },
     token: {
       chain: "base",
-      address:
-        row.token_address && /^0x[a-fA-F0-9]{40}$/.test(row.token_address)
-          ? row.token_address
-          : `0x${row.id.replace(/-/g, "").slice(0, 40).padEnd(40, "0")}`,
+      address: row.token_address!,
       decimals: 18,
     },
     pool: {
       id:
         row.pool_address && /^0x[a-fA-F0-9]{16,64}$/.test(row.pool_address)
           ? row.pool_address
-          : `0x${row.id.replace(/-/g, "").slice(0, 16)}`,
+          : "0x0000000000000000000000000000000000000000",
       hookAddress:
         row.hook_address && /^0x[a-fA-F0-9]{40}$/.test(row.hook_address)
           ? row.hook_address
@@ -105,12 +113,31 @@ function toBroadcastListing(row: {
       burnedTokens: 0,
       dynamicFeeBps: 0,
       runwayHours: 0,
-      active: false,
+      active: stage === "active",
     },
     spark: [],
     missions: [],
     updatedAt: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+    curve: {
+      address: row.curve_address ?? null,
+      chainId: row.chain_id ?? null,
+      stage,
+      ethReserveWei: "0",
+      graduationThresholdWei: thresholdWei,
+      progress: 0,
+      deployError: row.deploy_error ?? null,
+      verifiedAt: row.verified_at ?? null,
+    },
   };
+}
+
+function normalizeStage(
+  stage: string | null | undefined,
+): "pending" | "deploying" | "active" | "graduated" | "failed" {
+  if (stage === "deploying" || stage === "active" || stage === "graduated" || stage === "failed") {
+    return stage;
+  }
+  return "pending";
 }
 
 function inferSymbol(prompt: string | null, id: string): string {

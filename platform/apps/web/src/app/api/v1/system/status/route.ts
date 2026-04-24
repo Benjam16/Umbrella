@@ -1,7 +1,9 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, formatEther, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia } from "viem/chains";
 import { getServerSupabase, isSupabaseConfigured } from "@umbrella/runner/supabase";
 import { readWalletSessionFromCookie } from "@/lib/wallet-session";
+import { defaultLaunchChainId, getLaunchConfig } from "@/lib/launch/chain-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +42,7 @@ export async function GET(req: Request) {
     Number(process.env.UMBRELLA_MARKET_CHAIN_ID ?? 8453),
   );
   const indexers = await Promise.all(marketChainIds.map((id) => buildChainDiag(id, supabase)));
+  const deployer = await readDeployerDiag();
 
   return Response.json(
     {
@@ -61,6 +64,7 @@ export async function GET(req: Request) {
       relayer: {
         relayerSecretConfigured: Boolean(process.env.UMBRELLA_RELAYER_SECRET?.trim()),
       },
+      deployer,
       marketIndexer: {
         chainIds: marketChainIds,
         chains: indexers,
@@ -68,6 +72,59 @@ export async function GET(req: Request) {
     },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+async function readDeployerDiag(): Promise<{
+  configured: boolean;
+  address: string | null;
+  chainId: number | null;
+  balanceEth: string | null;
+  lowBalance: boolean;
+  basescanKeyConfigured: boolean;
+  error: string | null;
+}> {
+  const key = process.env.UMBRELLA_DEPLOYER_PRIVATE_KEY?.trim();
+  const basescanKeyConfigured = Boolean(process.env.BASESCAN_API_KEY?.trim());
+  if (!key) {
+    return {
+      configured: false,
+      address: null,
+      chainId: null,
+      balanceEth: null,
+      lowBalance: false,
+      basescanKeyConfigured,
+      error: null,
+    };
+  }
+  try {
+    const normalized = (key.startsWith("0x") ? key : `0x${key}`) as `0x${string}`;
+    const account = privateKeyToAccount(normalized);
+    const chainId = defaultLaunchChainId();
+    const cfg = getLaunchConfig(chainId);
+    const client = createPublicClient({ chain: cfg.chain, transport: http(cfg.rpcUrl) });
+    const balance = await client.getBalance({ address: account.address });
+    const balanceEth = formatEther(balance);
+    const lowBalance = balance < 10_000_000_000_000_000n; // below 0.01 ETH
+    return {
+      configured: true,
+      address: account.address,
+      chainId: cfg.chainId,
+      balanceEth,
+      lowBalance,
+      basescanKeyConfigured,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      address: null,
+      chainId: null,
+      balanceEth: null,
+      lowBalance: false,
+      basescanKeyConfigured,
+      error: err instanceof Error ? err.message : "deployer diag failed",
+    };
+  }
 }
 
 function parseChainIds(raw: string | undefined, fallback: number): number[] {

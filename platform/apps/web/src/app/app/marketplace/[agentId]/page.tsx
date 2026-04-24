@@ -34,6 +34,14 @@ export default function AgentProfilePage() {
   const [liveDelta, setLiveDelta] = useState<number | null>(null);
   const [liveState, setLiveState] = useState<"live" | "warmup" | "synthetic" | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
+  const [liveCurve, setLiveCurve] = useState<{
+    address: string | null;
+    stage: "pending" | "deploying" | "active" | "graduated" | "failed";
+    ethReserveWei: string;
+    graduationThresholdWei: string;
+    progress: number;
+    chainId: number | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +88,14 @@ export default function AgentProfilePage() {
           live?: { priceUsd?: number; delta?: number };
           spark?: Array<{ t: number; price: number }>;
           tape?: Array<{ id: string; side: "BUY" | "SELL"; price: number; size: number; ts: number }>;
+          curve?: {
+            address: string | null;
+            stage: "pending" | "deploying" | "active" | "graduated" | "failed";
+            ethReserveWei: string;
+            graduationThresholdWei: string;
+            progress: number;
+            chainId: number | null;
+          } | null;
         };
         if (cancelled) return;
         setLiveState(data.state ?? null);
@@ -88,6 +104,7 @@ export default function AgentProfilePage() {
         if (Array.isArray(data.tape)) setTradeTape(data.tape.slice(0, 18));
         if (typeof data.live?.priceUsd === "number") setLivePrice(data.live.priceUsd);
         if (typeof data.live?.delta === "number") setLiveDelta(data.live.delta);
+        if (data.curve) setLiveCurve(data.curve);
       } catch {
         /* best-effort live stream */
       }
@@ -195,6 +212,30 @@ export default function AgentProfilePage() {
               </div>
             </div>
           </header>
+
+          {liveCurve && liveCurve.stage !== "graduated" && (
+            <section className="mt-6 rounded-2xl border border-signal-blue/30 bg-signal-blue/[0.03] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+                <span>Pump curve · graduates to Uniswap v4</span>
+                <span className="text-zinc-300">{liveCurve.progress.toFixed(1)}%</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className="h-full bg-gradient-to-r from-signal-blue via-signal-green to-signal-green"
+                  style={{ width: `${liveCurve.progress}%` }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-zinc-500">
+                <span>
+                  {formatEthWei(liveCurve.ethReserveWei)} /{" "}
+                  {formatEthWei(liveCurve.graduationThresholdWei)} ETH
+                </span>
+                <span className="uppercase tracking-widest">
+                  stage · {liveCurve.stage}
+                </span>
+              </div>
+            </section>
+          )}
 
           {/* Big spark */}
           <section className="mt-6 rounded-2xl border border-zinc-800/80 bg-ink-900/60 p-4">
@@ -341,7 +382,21 @@ export default function AgentProfilePage() {
       </main>
 
       <TradeDrawer
-        listing={listing}
+        listing={{
+          ...listing,
+          curve: liveCurve
+            ? {
+                address: liveCurve.address,
+                chainId: liveCurve.chainId,
+                stage: liveCurve.stage,
+                ethReserveWei: liveCurve.ethReserveWei,
+                graduationThresholdWei: liveCurve.graduationThresholdWei,
+                progress: liveCurve.progress,
+                deployError: listing.curve?.deployError ?? null,
+                verifiedAt: listing.curve?.verifiedAt ?? null,
+              }
+            : listing.curve,
+        }}
         open={tradeOpen}
         onClose={() => setTradeOpen(false)}
         initialSide={tradeSide}
@@ -388,4 +443,16 @@ function Row({
       <span className="truncate text-zinc-200">{children}</span>
     </div>
   );
+}
+
+function formatEthWei(weiStr: string | undefined | null): string {
+  if (!weiStr) return "0.000";
+  try {
+    const wei = BigInt(weiStr);
+    const whole = wei / 10n ** 18n;
+    const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0");
+    return `${whole}.${frac}`;
+  } catch {
+    return "0.000";
+  }
 }

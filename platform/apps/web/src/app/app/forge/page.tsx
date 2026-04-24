@@ -1,11 +1,18 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
-import type { Address, Hex } from "viem";
+import { useSearchParams } from "next/navigation";
+import {
+  useAccount,
+  useSignTypedData,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
+import { createPublicClient, decodeEventLog, http, type Address, type Hex } from "viem";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
+import { LaunchStatusPanel } from "@/components/forge/LaunchStatusPanel";
+import { agentTokenFactoryAbi, erc20PermitAbi } from "@/lib/launch/abi";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
 import {
   markLaunchError,
@@ -23,22 +30,23 @@ type HookRow = {
   solidity_code: string;
 };
 
-type ForgeWalletClient = {
-  account?: { address: Address };
-  chain?: { id: number } | null;
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  sendTransaction: (args: {
-    account: Address;
-    to: Address;
-    value: bigint;
-    chain?: unknown;
-  }) => Promise<Hex>;
-};
-
 type ForkTemplate = {
   id: string;
   prompt: string;
   model: string;
+};
+
+type LaunchQuote = {
+  chainId: number;
+  factoryAddress: Address;
+  curveFactoryAddress: Address;
+  treasuryAddress: Address;
+  defaultAttester: Address;
+  launchFeeWei: string;
+  launchFeeHex: string;
+  graduationThresholdWei: string;
+  predictedTokenAddress: Address | null;
+  initialSupply: string;
 };
 
 export default function ForgePage() {
@@ -50,10 +58,10 @@ export default function ForgePage() {
 }
 
 function ForgeView() {
-  const router = useRouter();
   const { address: connectedWallet, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
+  const { signTypedDataAsync } = useSignTypedData();
   const searchParams = useSearchParams();
   const templateId = searchParams?.get("template") ?? null;
   const [wallet, setWallet] = useState("");
@@ -62,11 +70,10 @@ function ForgeView() {
   const [showRaw, setShowRaw] = useState(false);
   const [template, setTemplate] = useState<ForkTemplate | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
+  const [activeHookId, setActiveHookId] = useState<string | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const normalizedWallet = useMemo(() => wallet.trim().toLowerCase(), [wallet]);
 
-  // Resolve a `?template=<hookId>` into the initial wizard seed values.
-  // The endpoint returns 404 for private rows, so we just surface a soft
-  // message and let the wizard render empty if that happens.
   useEffect(() => {
     if (!templateId) {
       setTemplate(null);
@@ -76,9 +83,7 @@ function ForgeView() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/v1/forge/templates/${encodeURIComponent(templateId)}`,
-        );
+        const res = await fetch(`/api/v1/forge/templates/${encodeURIComponent(templateId)}`);
         if (!res.ok) {
           if (!cancelled) setTemplateError("template not found or no longer public");
           return;
@@ -90,9 +95,7 @@ function ForgeView() {
         }
       } catch (err) {
         if (!cancelled) {
-          setTemplateError(
-            err instanceof Error ? err.message : "failed to load template",
-          );
+          setTemplateError(err instanceof Error ? err.message : "failed to load template");
         }
       }
     })();
@@ -144,18 +147,30 @@ function ForgeView() {
   }, [normalizedWallet]);
 
   async function handleSubmit(result: WizardResult) {
-    const payment = await requestForgePayment(result.walletAddress, {
-      connectedWallet,
-      isConnected,
-      connectedChainId: chainId,
-      switchChainAsync,
-      walletClient: (walletClient as unknown as ForgeWalletClient | undefined),
+    setLaunchError(null);
+    if (!isConnected || !connectedWallet) {
+      throw new Error("Connect wallet before launching.");
+    }
+    if (connectedWallet.toLowerCase() !== result.walletAddress.toLowerCase()) {
+      throw new Error("Wallet address must match connected wallet.");
+    }
+    if (!walletClient) throw new Error("Wallet client not ready. Reconnect and retry.");
+
+    const blueprintId = deriveBlueprintId(result);
+    const initialSupply = 1_000_000_000n * 10n ** 18n; // 1B token default supply.
+
+    const quote = await fetchLaunchQuote({
+      walletAddress: result.walletAddress,
+      name: result.identity.name,
+      symbol: result.identity.symbol,
+      blueprint: blueprintId,
+      supply: initialSupply.toString(),
     });
 
-    setWallet(result.walletAddress);
+    if (chainId !== quote.chainId) {
+      await switchChainAsync({ chainId: quote.chainId });
+    }
 
-    // Stash an optimistic "Initializing..." card and jump to the workspace
-    // immediately — the user shouldn't have to wait on Kimi to feel progress.
     const launchId = newLaunchId();
     upsertPendingLaunch({
       id: launchId,
@@ -167,35 +182,62 @@ function ForgeView() {
       status: "initializing",
       createdAt: Date.now(),
     });
-    router.push("/app/workspace");
 
     try {
-      const res = await fetch("/api/v1/forge/launch", {
+      const factoryTxHash = await submitFactoryTx({
+        walletClient: walletClient as unknown as AnyWalletClient,
+        quote,
+        identity: result.identity,
+        blueprintId,
+        initialSupply,
+      });
+
+      const tokenAddress = await extractTokenAddressFromReceipt({
+        chainId: quote.chainId,
+        txHash: factoryTxHash,
+        factoryAddress: quote.factoryAddress,
+      });
+
+      const permit = await signPermit({
+        signTypedDataAsync: signTypedDataAsync as unknown as (
+          args: Record<string, unknown>,
+        ) => Promise<Hex>,
+        chainId: quote.chainId,
+        tokenAddress,
+        owner: result.walletAddress as Address,
+        spender: quote.curveFactoryAddress,
+        value: initialSupply,
+      });
+
+      const launchRes = await fetch("/api/v1/forge/launch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...result,
-          txHash: payment.txHash,
-          chainId: payment.chainId,
-          // If the wizard was seeded via Marketplace → "Fork this agent",
-          // persist the parent id so the original creator gets fork credit.
+          walletAddress: result.walletAddress,
+          factoryTxHash,
+          chainId: quote.chainId,
+          identity: result.identity,
+          mission: result.mission,
+          permit,
           forkedFrom: template?.id ?? null,
         }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "launch failed" }));
+      if (!launchRes.ok) {
+        const err = await launchRes.json().catch(() => ({ error: "launch failed" }));
         throw new Error(err?.error ?? "launch failed");
       }
-      const data = (await res.json()) as {
-        hook?: { id?: string; model?: string };
+      const data = (await launchRes.json()) as {
+        launch?: { hookId?: string; tokenAddress?: string; curveAddress?: string };
       };
-      markLaunchReady(launchId, {
-        hookId: data.hook?.id,
-        model: data.hook?.model,
-      });
+      if (data.launch?.hookId) {
+        setActiveHookId(data.launch.hookId);
+        markLaunchReady(launchId, { hookId: data.launch.hookId });
+      }
+      setWallet(result.walletAddress);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "launch failed";
       markLaunchError(launchId, msg);
+      setLaunchError(msg);
       throw err instanceof Error ? err : new Error(msg);
     }
   }
@@ -213,9 +255,9 @@ function ForgeView() {
               Launch your agent token in 3 steps
             </h1>
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-              The guided wizard keeps launching simple. Umbrella handles payment
-              verification, Solidity generation, and artifact streaming automatically.
-              Advanced users can expand the technical panel at any step.
+              Your wallet deploys the token, Umbrella deploys the mission record + bonding curve
+              with one permit signature, and trading opens immediately on a pump.fun-style curve.
+              When the curve fills, the agent graduates to a Uniswap v4 pool.
             </p>
           </div>
         </section>
@@ -226,17 +268,20 @@ function ForgeView() {
               {templateError}
             </div>
           )}
+          {launchError && (
+            <div className="rounded-lg border border-signal-red/40 bg-signal-red/5 px-3 py-2 font-mono text-[11px] text-signal-red">
+              {launchError}
+            </div>
+          )}
+          {activeHookId && (
+            <LaunchStatusPanel hookId={activeHookId} onClose={() => setActiveHookId(null)} />
+          )}
           <TokenLaunchWizard
             key={template?.id ?? "blank"}
             onSubmit={handleSubmit}
             initial={
               template
-                ? {
-                    mission: {
-                      prompt: template.prompt,
-                      category: "research",
-                    },
-                  }
+                ? { mission: { prompt: template.prompt, category: "research" } }
                 : undefined
             }
             contextNotice={
@@ -309,97 +354,168 @@ function ForgeView() {
   );
 }
 
-async function requestForgePayment(
-  walletAddress: string,
-  ctx: {
-    connectedWallet?: string;
-    isConnected: boolean;
-    connectedChainId?: number;
-    switchChainAsync: (args: { chainId: number }) => Promise<unknown>;
-    walletClient?: ForgeWalletClient;
-  },
-): Promise<{ txHash: string; chainId: number }> {
-  if (!ctx.isConnected || !ctx.connectedWallet) {
-    throw new Error("Connect wallet before forging.");
-  }
-  if (ctx.connectedWallet.toLowerCase() !== walletAddress.toLowerCase()) {
-    throw new Error("Wallet address must match connected wallet for payment.");
-  }
+// ---------------------------------------------------------------------------
+// Launch helpers
+// ---------------------------------------------------------------------------
 
-  const quoteRes = await fetch("/api/v1/forge/payment/quote", { cache: "no-store" });
-  const quote = (await quoteRes.json().catch(() => ({}))) as {
-    chainId?: number;
-    treasuryAddress?: string;
-    minPaymentWei?: string;
-    minPaymentHex?: string;
-    error?: string;
+function deriveBlueprintId(result: WizardResult): string {
+  const stamp = Date.now().toString(36);
+  const slug = result.identity.symbol
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 12);
+  return `umbrella-${slug}-${stamp}`;
+}
+
+async function fetchLaunchQuote(args: {
+  walletAddress: string;
+  name: string;
+  symbol: string;
+  blueprint: string;
+  supply: string;
+}): Promise<LaunchQuote> {
+  const url = new URL("/api/v1/forge/launch/prepare", window.location.origin);
+  url.searchParams.set("wallet", args.walletAddress);
+  url.searchParams.set("name", args.name);
+  url.searchParams.set("symbol", args.symbol.toUpperCase());
+  url.searchParams.set("blueprint", args.blueprint);
+  url.searchParams.set("supply", args.supply);
+
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `prepare failed: ${res.status}`);
+  }
+  return (await res.json()) as LaunchQuote;
+}
+
+type AnyWalletClient = {
+  account?: { address: Address };
+  chain?: { id: number } | null;
+  writeContract: (args: {
+    account: Address;
+    chain?: unknown;
+    address: Address;
+    abi: unknown;
+    functionName: string;
+    args: readonly unknown[];
+    value?: bigint;
+  }) => Promise<Hex>;
+};
+
+async function submitFactoryTx(args: {
+  walletClient: AnyWalletClient;
+  quote: LaunchQuote;
+  identity: WizardResult["identity"];
+  blueprintId: string;
+  initialSupply: bigint;
+}): Promise<Hex> {
+  const { walletClient, quote } = args;
+  if (!walletClient.account?.address) {
+    throw new Error("Wallet account unavailable. Reconnect and retry.");
+  }
+  const txHash = await walletClient.writeContract({
+    account: walletClient.account.address,
+    chain: walletClient.chain?.id === quote.chainId ? walletClient.chain : undefined,
+    address: quote.factoryAddress,
+    abi: agentTokenFactoryAbi,
+    functionName: "createAgentToken",
+    args: [
+      args.identity.name,
+      args.identity.symbol.toUpperCase(),
+      args.blueprintId,
+      args.initialSupply,
+    ],
+    value: BigInt(quote.launchFeeWei),
+  });
+  if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    throw new Error("factory tx did not return a valid hash");
+  }
+  return txHash;
+}
+
+async function extractTokenAddressFromReceipt(args: {
+  chainId: number;
+  txHash: Hex;
+  factoryAddress: Address;
+}): Promise<Address> {
+  const rpcUrl = args.chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
+  const pub = createPublicClient({ transport: http(rpcUrl) });
+  const receipt = await pub.waitForTransactionReceipt({ hash: args.txHash });
+  if (receipt.status !== "success") throw new Error("factory tx reverted on-chain");
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== args.factoryAddress.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: agentTokenFactoryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName === "AgentTokenCreated") {
+        const a = decoded.args as { token: Address };
+        return a.token;
+      }
+    } catch {
+      // unrelated log; continue
+    }
+  }
+  throw new Error("AgentTokenCreated event not found in factory tx receipt");
+}
+
+async function signPermit(args: {
+  signTypedDataAsync: (args: Record<string, unknown>) => Promise<Hex>;
+  chainId: number;
+  tokenAddress: Address;
+  owner: Address;
+  spender: Address;
+  value: bigint;
+}): Promise<{ deadline: string; v: number; r: Hex; s: Hex }> {
+  const rpcUrl = args.chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
+  const pub = createPublicClient({ transport: http(rpcUrl) });
+  const [rawName, nonce] = await Promise.all([
+    pub.readContract({ address: args.tokenAddress, abi: erc20PermitAbi, functionName: "name" }),
+    pub.readContract({
+      address: args.tokenAddress,
+      abi: erc20PermitAbi,
+      functionName: "nonces",
+      args: [args.owner],
+    }),
+  ]);
+
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 60);
+  const domain = {
+    name: rawName as string,
+    version: "1",
+    chainId: args.chainId,
+    verifyingContract: args.tokenAddress,
   };
-  if (
-    !quoteRes.ok ||
-    !quote.treasuryAddress ||
-    !quote.minPaymentHex ||
-    !quote.minPaymentWei ||
-    !Number.isInteger(quote.chainId)
-  ) {
-    throw new Error(quote.error || "forge payment config unavailable");
-  }
-  const targetChainId = quote.chainId ?? 84532;
+  const types = {
+    Permit: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  };
+  const message = {
+    owner: args.owner,
+    spender: args.spender,
+    value: args.value,
+    nonce: nonce as bigint,
+    deadline,
+  };
 
-  if (!ctx.walletClient) throw new Error("Wallet client not ready. Reconnect and retry.");
-  if (!ctx.walletClient.account?.address) {
-    throw new Error("Connected wallet account unavailable. Reconnect and retry.");
-  }
-
-  if (ctx.connectedChainId !== targetChainId) {
-    await ctx.switchChainAsync({ chainId: targetChainId });
-  }
-
-  const balanceHex = (await ctx.walletClient.request({
-    method: "eth_getBalance",
-    params: [walletAddress, "latest"],
-  })) as string;
-  const balanceWei = BigInt(balanceHex);
-  const requiredWei = BigInt(quote.minPaymentWei);
-  if (balanceWei < requiredWei) {
-    throw new Error(
-      `Insufficient balance for forge fee. Required ${formatEth(requiredWei)} ETH, available ${formatEth(balanceWei)} ETH.`,
-    );
-  }
-
-  const txHash = (await ctx.walletClient.sendTransaction({
-    account: ctx.walletClient.account.address,
-    to: quote.treasuryAddress as Address,
-    value: requiredWei,
-    chain: ctx.walletClient.chain?.id === targetChainId ? ctx.walletClient.chain : undefined,
+  const signature = (await args.signTypedDataAsync({
+    domain,
+    types,
+    primaryType: "Permit",
+    message,
   })) as Hex;
 
-  if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
-    throw new Error("payment transaction did not return a valid tx hash");
-  }
-
-  await waitForReceipt(ctx.walletClient, txHash);
-  return { txHash, chainId: targetChainId };
-}
-
-async function waitForReceipt(
-  walletClient: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> },
-  txHash: string,
-): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    const receipt = (await walletClient.request({
-      method: "eth_getTransactionReceipt",
-      params: [txHash],
-    })) as { status?: string } | null;
-    if (receipt?.status === "0x1") return;
-    if (receipt?.status === "0x0") throw new Error("payment transaction failed on-chain");
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-  }
-  throw new Error("payment confirmation timeout. Please retry forge in a moment.");
-}
-
-function formatEth(wei: bigint): string {
-  const whole = wei / 10n ** 18n;
-  const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0");
-  return `${whole}.${frac}`;
+  const sig = signature.slice(2);
+  const r = `0x${sig.slice(0, 64)}` as Hex;
+  const s = `0x${sig.slice(64, 128)}` as Hex;
+  const v = parseInt(sig.slice(128, 130), 16);
+  return { deadline: deadline.toString(), v, r, s };
 }

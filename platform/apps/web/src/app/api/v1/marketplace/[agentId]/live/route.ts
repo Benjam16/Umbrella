@@ -1,6 +1,10 @@
+import { createPublicClient, http, type Address } from "viem";
+
 import { listPublicHooks } from "@/lib/forge-hooks";
 import { enrichListingWithSyntheticMarket } from "@/lib/marketplace";
 import { getPersistedLiveMarket } from "@/lib/market-live";
+import { bondingCurveAbi } from "@/lib/launch/abi";
+import { getLaunchConfig } from "@/lib/launch/chain-config";
 import { getServerSupabase } from "@umbrella/runner/supabase";
 
 export const runtime = "nodejs";
@@ -23,6 +27,11 @@ export async function GET(
     const rows = await listPublicHooks(200);
     const row = rows.find((r) => r.id === agentId);
     if (!row) return Response.json({ error: "not found" }, { status: 404 });
+    const curveInfo = await readCurveInfo({
+      curveAddress: row.curve_address ?? null,
+      chainId: row.chain_id ?? null,
+      stage: row.curve_stage ?? null,
+    });
     const persisted = await getPersistedLiveMarket(agentId);
     if (persisted) {
       return Response.json(
@@ -37,6 +46,7 @@ export async function GET(
           },
           spark: persisted.spark,
           tape: persisted.tape,
+          curve: curveInfo,
         },
         { headers: { "Cache-Control": "no-store" } },
       );
@@ -57,6 +67,7 @@ export async function GET(
           },
           spark: warmup.spark,
           tape: warmup.tape,
+          curve: curveInfo,
         },
         { headers: { "Cache-Control": "no-store" } },
       );
@@ -83,6 +94,7 @@ export async function GET(
         },
         spark,
         tape,
+        curve: curveInfo,
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -194,6 +206,74 @@ function inferName(prompt: string | null, symbol: string): string {
   const match = prompt.match(/Agent:\s*([^()\n]{2,60})/i);
   if (match?.[1]) return match[1].trim();
   return `Agent ${symbol}`;
+}
+
+async function readCurveInfo(args: {
+  curveAddress: string | null;
+  chainId: number | null;
+  stage: string | null;
+}): Promise<{
+  address: string | null;
+  chainId: number | null;
+  stage: "pending" | "deploying" | "active" | "graduated" | "failed";
+  ethReserveWei: string;
+  graduationThresholdWei: string;
+  progress: number;
+} | null> {
+  const normalizedStage = normalizeStage(args.stage);
+  if (!args.curveAddress || !/^0x[a-fA-F0-9]{40}$/.test(args.curveAddress)) {
+    return {
+      address: null,
+      chainId: args.chainId,
+      stage: normalizedStage,
+      ethReserveWei: "0",
+      graduationThresholdWei: "0",
+      progress: 0,
+    };
+  }
+  try {
+    const config = getLaunchConfig(args.chainId ?? undefined);
+    const client = createPublicClient({ chain: config.chain, transport: http(config.rpcUrl) });
+    const [reserve, threshold] = (await Promise.all([
+      client.readContract({
+        address: args.curveAddress as Address,
+        abi: bondingCurveAbi,
+        functionName: "ethReserve",
+      }),
+      client.readContract({
+        address: args.curveAddress as Address,
+        abi: bondingCurveAbi,
+        functionName: "graduationThresholdWei",
+      }),
+    ])) as [bigint, bigint];
+    const progress = threshold > 0n ? Number((reserve * 10_000n) / threshold) / 100 : 0;
+    return {
+      address: args.curveAddress,
+      chainId: config.chainId,
+      stage: normalizedStage,
+      ethReserveWei: reserve.toString(),
+      graduationThresholdWei: threshold.toString(),
+      progress: Math.min(100, Math.max(0, progress)),
+    };
+  } catch {
+    return {
+      address: args.curveAddress,
+      chainId: args.chainId,
+      stage: normalizedStage,
+      ethReserveWei: "0",
+      graduationThresholdWei: "0",
+      progress: 0,
+    };
+  }
+}
+
+function normalizeStage(
+  stage: string | null | undefined,
+): "pending" | "deploying" | "active" | "graduated" | "failed" {
+  if (stage === "deploying" || stage === "active" || stage === "graduated" || stage === "failed") {
+    return stage;
+  }
+  return "pending";
 }
 
 async function getWarmupState(

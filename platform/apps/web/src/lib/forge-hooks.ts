@@ -18,6 +18,18 @@ export type GeneratedHookRow = {
   token_address: string | null;
   pool_address: string | null;
   hook_address: string | null;
+  /** Pump.fun-style bonding curve address (migration 0008). */
+  curve_address?: string | null;
+  /** pending | deploying | active | graduated | failed. */
+  curve_stage?: string | null;
+  /** Set when the mission record contract is verified on Basescan. */
+  verified_at?: string | null;
+  /** Populated when any deploy step fails; surfaced in LaunchStatusPanel. */
+  deploy_error?: string | null;
+  /** keccak256 of the Kimi Solidity output. */
+  mission_code_hash?: string | null;
+  /** Supabase storage path pointing at the full Kimi source. */
+  metadata_uri?: string | null;
   created_at: string;
 };
 
@@ -91,11 +103,13 @@ export async function verifyPaymentFromWebhook(
     throw new Error(`unsupported forge chain ${chainId}`);
   }
   const chain = isSepolia ? baseSepolia : base;
-  const rpcUrl = isSepolia
-    ? process.env.BASE_SEPOLIA_RPC_URL?.trim() || process.env.BASE_RPC_URL?.trim()
-    : process.env.BASE_RPC_URL?.trim();
-  if (!rpcUrl) {
-    throw new Error(isSepolia ? "BASE_SEPOLIA_RPC_URL is required" : "BASE_RPC_URL is required");
+  const rpcCandidates = buildRpcCandidates({ isSepolia });
+  if (rpcCandidates.length === 0) {
+    throw new Error(
+      isSepolia
+        ? "BASE_SEPOLIA_RPC_URL is required (or use a valid public Base Sepolia RPC)"
+        : "BASE_RPC_URL is required",
+    );
   }
   const treasury = (
     (isSepolia ? process.env.TREASURY_ADDRESS_SEPOLIA : undefined) ??
@@ -110,9 +124,11 @@ export async function verifyPaymentFromWebhook(
     ).trim(),
   );
 
-  const client = createPublicClient({ chain, transport: http(rpcUrl) });
-  const tx = await client.getTransaction({ hash: txHash });
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  const { tx, receipt } = await fetchTxWithRpcFailover({
+    chain,
+    txHash,
+    rpcCandidates,
+  });
   if (receipt.status !== "success") throw new Error("payment transaction reverted");
   if (!tx.to) throw new Error("payment transaction has no recipient");
   if (tx.to.toLowerCase() !== treasury) throw new Error("payment not sent to configured treasury");
@@ -124,6 +140,56 @@ export async function verifyPaymentFromWebhook(
     to: tx.to,
     value: tx.value,
   };
+}
+
+function buildRpcCandidates(args: { isSepolia: boolean }): string[] {
+  const raw = args.isSepolia
+    ? [
+        process.env.BASE_SEPOLIA_RPC_URL,
+        process.env.BASE_RPC_URL,
+        // Safe public fallback if a custom provider URL is malformed.
+        "https://sepolia.base.org",
+      ]
+    : [process.env.BASE_RPC_URL, "https://mainnet.base.org"];
+  return raw
+    .map((v) => v?.trim() ?? "")
+    .filter((v, idx, arr) => v.length > 0 && arr.indexOf(v) === idx);
+}
+
+async function fetchTxWithRpcFailover(args: {
+  chain: typeof base | typeof baseSepolia;
+  txHash: Hex;
+  rpcCandidates: string[];
+}): Promise<{
+  tx: { from: Address; to: Address | null; value: bigint };
+  receipt: { status: string };
+}> {
+  const errors: string[] = [];
+  for (const rpcUrl of args.rpcCandidates) {
+    try {
+      const client = createPublicClient({ chain: args.chain, transport: http(rpcUrl) });
+      const [tx, receipt] = await Promise.all([
+        client.getTransaction({ hash: args.txHash }),
+        client.getTransactionReceipt({ hash: args.txHash }),
+      ]);
+      return {
+        tx: {
+          from: tx.from,
+          to: tx.to,
+          value: tx.value,
+        },
+        receipt: {
+          status: String(receipt.status),
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "rpc request failed";
+      errors.push(`${rpcUrl} => ${msg.slice(0, 180)}`);
+    }
+  }
+  throw new Error(
+    `payment verification RPC failed across all endpoints. Check BASE RPC env. ${errors[0] ?? ""}`,
+  );
 }
 
 export async function generateHookWithKimi(prompt: string): Promise<{ code: string; model: string }> {
@@ -348,45 +414,36 @@ export async function getPublicHookById(
   > | null;
 }
 
-export async function listPublicHooks(limit = 50): Promise<
-  Array<
-    Pick<
-      GeneratedHookRow,
-      | "id"
-      | "wallet_address"
-      | "model"
-      | "prompt"
-      | "created_at"
-      | "token_address"
-      | "pool_address"
-      | "hook_address"
-    >
-  >
-> {
+export type PublicHookListing = Pick<
+  GeneratedHookRow,
+  | "id"
+  | "wallet_address"
+  | "model"
+  | "prompt"
+  | "created_at"
+  | "token_address"
+  | "pool_address"
+  | "hook_address"
+  | "chain_id"
+  | "curve_address"
+  | "curve_stage"
+  | "verified_at"
+  | "deploy_error"
+>;
+
+export async function listPublicHooks(limit = 50): Promise<PublicHookListing[]> {
   const supabase = getServerSupabase();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("generated_hooks")
     .select(
-      "id, wallet_address, model, prompt, created_at, token_address, pool_address, hook_address",
+      "id, wallet_address, model, prompt, created_at, chain_id, token_address, pool_address, hook_address, curve_address, curve_stage, verified_at, deploy_error",
     )
     .eq("is_public", true)
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw new Error(error.message);
-  return (data ?? []) as Array<
-    Pick<
-      GeneratedHookRow,
-      | "id"
-      | "wallet_address"
-      | "model"
-      | "prompt"
-      | "created_at"
-      | "token_address"
-      | "pool_address"
-      | "hook_address"
-    >
-  >;
+  return (data ?? []) as PublicHookListing[];
 }
 
 /**

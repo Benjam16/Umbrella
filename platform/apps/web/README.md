@@ -146,6 +146,58 @@ UMBRELLA_MARKET_MAX_TRADES_PER_TICK=250
 
 The worker creates an independent cursor per chain (`market-swap-indexer:<chainId>`), so restarts and retries continue safely without cross-chain cursor collisions.
 
+## Pump.fun-style launch pipeline
+
+The `Launch a Token or Agent` flow walks a user's wallet through a single
+`factory.createAgentToken{value: launchFee}` transaction, then the server-side
+orchestrator (`src/lib/launch/orchestrator.ts`) runs:
+
+1. Verify the factory tx on-chain (RPC failover), decode `AgentTokenCreated`.
+2. Call Kimi for the mission blueprint; persist it.
+3. Deploy `UmbrellaAgentMissionRecord` from the deployer hot wallet.
+4. Consume the user's ERC-2612 permit, call `UmbrellaCurveFactory.createCurveWithPermit`.
+5. Flip `generated_hooks.curve_stage` to `active`; kick off Basescan verification async.
+
+### Required env
+
+```bash
+# Hot wallet for server-side deploys. Rotate regularly; keep a low-balance alarm.
+UMBRELLA_DEPLOYER_PRIVATE_KEY=
+
+# Factories + Uniswap v4 on Sepolia (mainnet addresses gated behind the flag).
+UMBRELLA_AGENT_TOKEN_FACTORY_SEPOLIA=
+UMBRELLA_CURVE_FACTORY_SEPOLIA=
+UMBRELLA_V4_POOL_MANAGER_SEPOLIA=0x7da1d65f8b249183667cde74c5cbd46dd38aa829
+
+# Bonding-curve graduation threshold (defaults to 5 ETH).
+UMBRELLA_GRADUATION_THRESHOLD_WEI=5000000000000000000
+
+# Basescan verification (async; non-blocking — tokens trade before verify finishes).
+BASESCAN_API_KEY=
+
+# Flip only after Sepolia has been fully exercised.
+UMBRELLA_LAUNCH_MAINNET_ENABLED=false
+```
+
+### Deployer key rotation
+
+1. Generate a new key offline (`cast wallet new` or equivalent). Fund it with
+   ~0.2 ETH per active chain; pump.fun curve deploys cost an order of magnitude
+   less but leave headroom for batched Basescan retries.
+2. Set the new `UMBRELLA_DEPLOYER_PRIVATE_KEY` in the platform secret manager
+   and redeploy. Old in-flight launches finish on whichever key was active when
+   the orchestrator started.
+3. Drain the old wallet back to treasury and revoke key references.
+4. Watch `/app/settings` → "Deployer hot wallet" for the live balance and the
+   `Low balance` warning indicator (default threshold: 0.01 ETH).
+
+### Basescan
+
+`BASESCAN_API_KEY` powers `src/lib/launch/basescan.ts`. When it is unset the
+verify step records `skipped` in `launch_jobs` and the UI shows the mission
+record as `deployed (unverified)`. Rotating the key needs no redeploy — the
+next orchestrator run picks up the new value from env.
+
 ### Dedupe audit SQL
 
 Run this in Supabase SQL editor to measure ingest dedupe effectiveness:

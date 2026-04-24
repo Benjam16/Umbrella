@@ -17,6 +17,7 @@ const tradeSchema = z.object({
   tradedAt: z.string().datetime().optional(),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
   blockNumber: z.number().int().nonnegative().optional(),
+  source: z.enum(["pool", "curve"]).optional(),
 });
 
 const bodySchema = z.object({

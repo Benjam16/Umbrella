@@ -28,6 +28,7 @@ export type MarketTradeIngest = {
   tradedAt?: string;
   txHash?: string;
   blockNumber?: number;
+  source?: "pool" | "curve";
 };
 
 /**
@@ -112,6 +113,7 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
     tx_hash: string | null;
     block_number: number | null;
     traded_at: string;
+    source: "pool" | "curve";
   }> = [];
   for (const t of trades) {
     const hookId =
@@ -138,6 +140,7 @@ export async function ingestMarketTrades(trades: MarketTradeIngest[]): Promise<{
       tx_hash: t.txHash ?? null,
       block_number: t.blockNumber ?? null,
       traded_at: t.tradedAt ? new Date(t.tradedAt).toISOString() : new Date().toISOString(),
+      source: t.source ?? "pool",
     });
   }
   if (rows.length === 0) return { insertedTrades: 0, upsertedCandles: 0 };

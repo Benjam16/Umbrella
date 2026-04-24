@@ -133,6 +133,50 @@ export default function SettingsPage() {
                   <StatusRow label="Supabase" value={status.supabase.reachable ? "reachable" : status.supabase.configured ? "configured, unreachable" : "not configured"} tone={status.supabase.reachable ? "ok" : "warn"} />
                   <StatusRow label="Relayer secret" value={status.relayer.relayerSecretConfigured ? "configured" : "missing"} tone={status.relayer.relayerSecretConfigured ? "ok" : "warn"} />
                 </div>
+
+                <div className="rounded-md border border-zinc-800 bg-ink-950/70 p-2">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                    Deployer hot wallet
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <StatusRow
+                      label="Deployer key"
+                      value={status.deployer?.configured ? "configured" : "missing"}
+                      tone={status.deployer?.configured ? "ok" : "warn"}
+                    />
+                    <StatusRow
+                      label="Deployer address"
+                      value={status.deployer?.address ?? "–"}
+                    />
+                    <StatusRow
+                      label="Launch chain"
+                      value={status.deployer?.chainId ? String(status.deployer.chainId) : "–"}
+                    />
+                    <StatusRow
+                      label="Balance"
+                      value={
+                        status.deployer?.balanceEth
+                          ? `${Number(status.deployer.balanceEth).toFixed(4)} ETH`
+                          : "–"
+                      }
+                      tone={
+                        status.deployer?.balanceEth
+                          ? status.deployer.lowBalance
+                            ? "warn"
+                            : "ok"
+                          : undefined
+                      }
+                    />
+                    <StatusRow
+                      label="Basescan key"
+                      value={status.deployer?.basescanKeyConfigured ? "configured" : "missing"}
+                      tone={status.deployer?.basescanKeyConfigured ? "ok" : "warn"}
+                    />
+                    {status.deployer?.error && (
+                      <StatusRow label="Deployer error" value={status.deployer.error} tone="warn" />
+                    )}
+                  </div>
+                </div>
                 <div className="rounded-md border border-zinc-800 bg-ink-950/70 p-2">
                   <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                     Indexer lag by chain
@@ -195,6 +239,15 @@ type SystemStatus = {
   };
   supabase: { configured: boolean; reachable: boolean };
   relayer: { relayerSecretConfigured: boolean };
+  deployer?: {
+    configured: boolean;
+    address: string | null;
+    chainId: number | null;
+    balanceEth: string | null;
+    lowBalance: boolean;
+    basescanKeyConfigured: boolean;
+    error: string | null;
+  };
   marketIndexer: {
     chainIds: number[];
     chains: Array<{

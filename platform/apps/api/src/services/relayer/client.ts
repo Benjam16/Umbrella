@@ -29,6 +29,7 @@ export type WebClient = {
       tradedAt?: string;
       txHash?: string;
       blockNumber?: number;
+      source?: "pool" | "curve";
     }>,
   ) => Promise<{ ok: boolean; insertedTrades: number; upsertedCandles: number }>;
   getIndexerCursor: (id: string) => Promise<{ cursorBlock: bigint; meta: Record<string, unknown> }>;
@@ -111,6 +112,7 @@ export function createWebClient(): WebClient {
       tradedAt?: string;
       txHash?: string;
       blockNumber?: number;
+      source?: "pool" | "curve";
     }>,
   ) {
     if (!secret) {

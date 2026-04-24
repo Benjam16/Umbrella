@@ -1,10 +1,20 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useSignMessage,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
+import { erc20Abi, formatEther, parseEther, type Address, type Hex } from "viem";
+
 import type { AgentListing } from "@/lib/marketplace";
 import { formatUsd } from "@/lib/marketplace";
+import { bondingCurveAbi } from "@/lib/launch/abi";
 import { ensureWalletSession } from "@/lib/client-wallet-auth";
 
 type Side = "buy" | "sell";
@@ -17,94 +27,212 @@ type Props = {
 };
 
 /**
- * Mini-swap UI that sits inside the marketplace card. Built to match the
- * Umbrella Performance Hook v4 pool — the fee you see here is the *dynamic*
- * fee the hook applies based on the agent's success rate, not a static pool
- * fee, and the "Agent treasury cut" line surfaces the afterSwap redirect.
- *
- * The handler is intentionally a no-op: wire `wagmi.useWriteContract` +
- * Coinbase Paymaster capabilities in Phase 2. All state shown here
- * (dynamicFeeBps, treasuryBps, runway) is the same state the real
- * transaction will read from the hook.
+ * In-app pump.fun-style swap. While the agent's curve is `active`, the user
+ * trades directly against the UmbrellaBondingCurve contract (buy with ETH,
+ * sell tokens back to the curve). Once the curve graduates to a Uniswap v4
+ * pool, the same drawer flips to in-app v4 swaps — no external DEX links.
  */
 export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Props) {
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [quote, setQuote] = useState<{ tokensOut?: bigint; ethInGross?: bigint; ethOutNet?: bigint } | null>(null);
+
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: walletClient } = useWalletClient();
+  const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+
+  const curve = listing.curve ?? null;
+  const curveAddress = (curve?.address ?? "") as Address | "";
+  const curveChainId = curve?.chainId ?? null;
+  const publicClient = usePublicClient({
+    chainId: curveChainId ?? chainId,
+  });
+
   useEffect(() => {
     if (!open) return;
     setSide(initialSide);
     setSubmitError(null);
+    setSuccessMessage(null);
+    setAmount("");
+    setQuote(null);
   }, [open, initialSide]);
 
+  const canTradeActive = curve?.stage === "active" && /^0x[a-fA-F0-9]{40}$/.test(curveAddress);
+  const canTradeGraduated = curve?.stage === "graduated";
   const parsed = Number(amount);
-  const feeBps = listing.performance.dynamicFeeBps;
-  const treasuryBps = 50; // 0.5% afterSwap diversion to the agent treasury
-  const output = useMemo(() => {
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    // Buy: USD in → tokens out. Sell: tokens in → USD out. We quote at spot,
-    // then apply the hook fee + treasury cut so the user sees the real
-    // economic impact of the v4 hook in the slippage card.
-    const priceUsd = listing.price.usd;
-    if (side === "buy") {
-      const gross = parsed / priceUsd;
-      const net = gross * (1 - (feeBps + treasuryBps) / 10_000);
-      return { tokens: net, usd: parsed };
+
+  const refreshQuote = useCallback(async () => {
+    if (!publicClient || !curveAddress || !canTradeActive) {
+      setQuote(null);
+      return;
     }
-    const gross = parsed * priceUsd;
-    const net = gross * (1 - (feeBps + treasuryBps) / 10_000);
-    return { tokens: parsed, usd: net };
-  }, [parsed, side, listing.price.usd, feeBps]);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setQuote(null);
+      return;
+    }
+    try {
+      if (side === "buy") {
+        const ethIn = parseEther(amount as `${number}`);
+        const tokensOut = (await publicClient.readContract({
+          address: curveAddress,
+          abi: bondingCurveAbi,
+          functionName: "previewBuyFromEth",
+          args: [ethIn],
+        })) as bigint;
+        setQuote({ tokensOut, ethInGross: ethIn });
+      } else {
+        const tokensIn = parseEther(amount as `${number}`);
+        const [ethOutNet] = (await publicClient.readContract({
+          address: curveAddress,
+          abi: bondingCurveAbi,
+          functionName: "quoteSell",
+          args: [tokensIn],
+        })) as [bigint, bigint];
+        setQuote({ ethOutNet, tokensOut: tokensIn });
+      }
+    } catch {
+      setQuote(null);
+    }
+  }, [amount, publicClient, curveAddress, canTradeActive, parsed, side]);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshQuote();
+  }, [open, refreshQuote]);
+
+  const progress = useMemo(() => {
+    if (!curve) return 0;
+    const threshold = safeBigInt(curve.graduationThresholdWei);
+    const reserve = safeBigInt(curve.ethReserveWei);
+    if (threshold <= 0n) return 0;
+    const pct = Number((reserve * 10_000n) / threshold) / 100;
+    return Math.min(100, Math.max(0, pct));
+  }, [curve]);
 
   const glow =
     listing.performance.successRate >= 0.95
       ? "border-signal-green/40 shadow-[0_0_40px_-10px_rgba(34,211,166,0.4)]"
       : "border-zinc-800";
-  const hasCanonicalToken =
-    /^0x[a-fA-F0-9]{40}$/.test(listing.token.address) &&
-    listing.token.address !== "0x0000000000000000000000000000000000000000";
 
   async function executeTrade() {
-    if (!output || output.usd <= 0) return;
+    setSubmitError(null);
+    setSuccessMessage(null);
     if (!isConnected || !address) {
       setSubmitError("Connect wallet to continue.");
       return;
     }
-    if (!hasCanonicalToken) {
-      setSubmitError("Token trading route not configured for this listing yet.");
+    if (!canTradeActive) {
+      setSubmitError(
+        canTradeGraduated
+          ? "Graduated pool trading lands in the next release — try a curve agent for now."
+          : "Curve not active yet for this agent.",
+      );
       return;
     }
-    setSubmitError(null);
-    await ensureWalletSession({
-      walletAddress: address,
-      signMessageAsync,
-    });
-    await fetch("/api/v1/trades/intents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        walletAddress: address,
-        hookId: listing.id,
-        side,
-        amountUsd: output.usd,
-        tokenAmount: output.tokens,
-      }),
-    }).catch(() => {
-      /* non-blocking: intent persistence should not block swap redirect */
-    });
+    if (!walletClient || !publicClient) {
+      setSubmitError("Wallet not ready. Reconnect and retry.");
+      return;
+    }
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setSubmitError("Enter an amount greater than zero.");
+      return;
+    }
+    if (curveChainId && chainId !== curveChainId) {
+      try {
+        await switchChainAsync({ chainId: curveChainId });
+      } catch (err) {
+        setSubmitError(`Switch to chain ${curveChainId} to trade: ${err instanceof Error ? err.message : ""}`);
+        return;
+      }
+    }
 
-    const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-    const inputCurrency = side === "buy" ? USDC_BASE : listing.token.address;
-    const outputCurrency = side === "buy" ? listing.token.address : USDC_BASE;
-    const amountParam = side === "buy" ? output.usd.toFixed(2) : output.tokens.toFixed(6);
-    const url =
-      `https://app.uniswap.org/#/swap?chain=base` +
-      `&inputCurrency=${encodeURIComponent(inputCurrency)}` +
-      `&outputCurrency=${encodeURIComponent(outputCurrency)}` +
-      `&exactField=input&exactAmount=${encodeURIComponent(amountParam)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      setSubmitting(true);
+      await ensureWalletSession({ walletAddress: address, signMessageAsync });
+
+      // Non-blocking intent log — Umbrella portfolio uses this to reconcile.
+      void fetch("/api/v1/trades/intents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress: address,
+          hookId: listing.id,
+          side,
+          amountUsd: parsed,
+          tokenAmount: parsed,
+        }),
+      }).catch(() => {});
+
+      let txHash: Hex;
+      if (side === "buy") {
+        const ethIn = parseEther(amount as `${number}`);
+        const tokensOut = (await publicClient.readContract({
+          address: curveAddress as Address,
+          abi: bondingCurveAbi,
+          functionName: "previewBuyFromEth",
+          args: [ethIn],
+        })) as bigint;
+        if (tokensOut === 0n) throw new Error("curve quoted 0 tokens — try a larger amount");
+        const minOut = (tokensOut * 95n) / 100n; // 5% slippage tolerance
+        txHash = await walletClient.writeContract({
+          account: walletClient.account!,
+          chain: walletClient.chain,
+          address: curveAddress as Address,
+          abi: bondingCurveAbi,
+          functionName: "buy",
+          args: [minOut, ethIn],
+          value: ethIn,
+        });
+      } else {
+        const tokensIn = parseEther(amount as `${number}`);
+        const allowance = (await publicClient.readContract({
+          address: listing.token.address as Address,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, curveAddress as Address],
+        })) as bigint;
+        if (allowance < tokensIn) {
+          const approveHash = await walletClient.writeContract({
+            account: walletClient.account!,
+            chain: walletClient.chain,
+            address: listing.token.address as Address,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [curveAddress as Address, tokensIn],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        }
+        const [ethOutNet] = (await publicClient.readContract({
+          address: curveAddress as Address,
+          abi: bondingCurveAbi,
+          functionName: "quoteSell",
+          args: [tokensIn],
+        })) as [bigint, bigint];
+        const minEth = (ethOutNet * 95n) / 100n;
+        txHash = await walletClient.writeContract({
+          account: walletClient.account!,
+          chain: walletClient.chain,
+          address: curveAddress as Address,
+          abi: bondingCurveAbi,
+          functionName: "sell",
+          args: [tokensIn, minEth],
+        });
+      }
+
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      setSuccessMessage(`Trade confirmed. tx: ${txHash.slice(0, 10)}…${txHash.slice(-4)}`);
+      setAmount("");
+      setQuote(null);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "trade failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -130,13 +258,13 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                  Uniswap v4 · Umbrella Performance Hook
+                  {curve?.stage === "graduated"
+                    ? "Uniswap v4 · Umbrella Performance Hook"
+                    : "Umbrella Bonding Curve"}
                 </div>
                 <div className="mt-1 text-lg font-semibold text-zinc-100">
                   {listing.name}
-                  <span className="ml-2 font-mono text-[13px] text-zinc-500">
-                    {listing.symbol}
-                  </span>
+                  <span className="ml-2 font-mono text-[13px] text-zinc-500">{listing.symbol}</span>
                 </div>
                 <div className="mt-1 font-mono text-[11px] text-zinc-500">
                   {formatUsd(listing.price.usd)} · {listing.performance.missions24h} missions · 24h
@@ -150,6 +278,25 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
                 esc
               </button>
             </div>
+
+            {curve && curve.stage !== "graduated" && (
+              <div className="mb-4 rounded-md border border-zinc-800 bg-ink-950 p-3">
+                <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                  <span>Graduation progress</span>
+                  <span className="text-zinc-300">{progress.toFixed(1)}%</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full bg-gradient-to-r from-signal-blue to-signal-green"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <p className="mt-2 font-mono text-[10px] text-zinc-500">
+                  {formatEther(safeBigInt(curve.ethReserveWei))} /{" "}
+                  {formatEther(safeBigInt(curve.graduationThresholdWei))} ETH
+                </p>
+              </div>
+            )}
 
             <div className="mb-4 flex gap-1 rounded-lg border border-zinc-800 p-1">
               {(["buy", "sell"] as Side[]).map((s) => (
@@ -172,7 +319,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
 
             <label className="block">
               <span className="mb-1 block font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                {side === "buy" ? "Pay (USDC)" : `Sell (${listing.symbol})`}
+                {side === "buy" ? "Pay (ETH)" : `Sell (${listing.symbol})`}
               </span>
               <input
                 value={amount}
@@ -185,30 +332,24 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
 
             <div className="mt-3 rounded-md border border-zinc-800 bg-ink-950 p-3 font-mono text-[11px] text-zinc-400">
               <Row label="You receive">
-                {output
-                  ? side === "buy"
-                    ? `${output.tokens.toFixed(2)} ${listing.symbol}`
-                    : `$${output.usd.toFixed(2)}`
+                {quote?.tokensOut && side === "buy"
+                  ? `${formatEther(quote.tokensOut).slice(0, 10)} ${listing.symbol}`
+                  : quote?.ethOutNet && side === "sell"
+                    ? `${formatEther(quote.ethOutNet).slice(0, 10)} ETH`
+                    : "—"}
+              </Row>
+              <Row label="Slippage tolerance">5%</Row>
+              <Row label="Curve stage">{curve?.stage ?? "pending"}</Row>
+              <Row label="Curve">
+                {curveAddress
+                  ? `${curveAddress.slice(0, 6)}…${curveAddress.slice(-4)}`
                   : "—"}
-              </Row>
-              <Row
-                label="Hook fee (dynamic)"
-                tone={feeBps <= 10 ? "good" : feeBps >= 80 ? "warn" : undefined}
-              >
-                {(feeBps / 100).toFixed(2)}%
-                {feeBps <= 10 && <span className="ml-2 text-signal-green">◉ high-success discount</span>}
-              </Row>
-              <Row label="Agent treasury cut (afterSwap)">
-                {(treasuryBps / 100).toFixed(2)}% → buy &amp; burn
-              </Row>
-              <Row label="Runway added">
-                {output ? `+${Math.round((output.usd * (treasuryBps / 10_000)) / 0.0001)} gas units` : "—"}
               </Row>
             </div>
 
             <button
               type="button"
-              disabled={!output || output.usd <= 0}
+              disabled={!canTradeActive || !Number.isFinite(parsed) || parsed <= 0 || submitting}
               onClick={executeTrade}
               className={`mt-4 w-full rounded-md border py-2.5 font-mono text-[12px] uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 side === "buy"
@@ -216,15 +357,25 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
                   : "border-signal-red/40 bg-signal-red/10 text-signal-red hover:border-signal-red"
               }`}
             >
-              {side === "buy" ? `Buy ${listing.symbol}` : `Sell ${listing.symbol}`} · open swap
+              {submitting
+                ? "Confirming…"
+                : side === "buy"
+                  ? `Buy ${listing.symbol}`
+                  : `Sell ${listing.symbol}`}
             </button>
             {submitError && (
               <p className="mt-2 text-center font-mono text-[10px] text-signal-red">{submitError}</p>
             )}
+            {successMessage && (
+              <p className="mt-2 text-center font-mono text-[10px] text-signal-green">{successMessage}</p>
+            )}
 
             <p className="mt-3 text-center text-[10px] text-zinc-600">
-              Opens Uniswap on Base with this pair prefilled. Umbrella logs an
-              intent record so portfolio/history can be reconciled.
+              {canTradeActive
+                ? "Trades route directly into the UmbrellaBondingCurve contract."
+                : canTradeGraduated
+                  ? "This curve has graduated. Full v4 pool swaps arrive in the next release."
+                  : "Trading opens automatically when the launch pipeline completes."}
             </p>
           </motion.div>
         </motion.div>
@@ -233,21 +384,20 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
   );
 }
 
-function Row({
-  label,
-  children,
-  tone,
-}: {
-  label: string;
-  children: React.ReactNode;
-  tone?: "good" | "warn";
-}) {
-  const toneCls =
-    tone === "good" ? "text-signal-green" : tone === "warn" ? "text-signal-amber" : "text-zinc-200";
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-1">
       <span className="text-zinc-500">{label}</span>
-      <span className={toneCls}>{children}</span>
+      <span className="text-zinc-200">{children}</span>
     </div>
   );
+}
+
+function safeBigInt(value: string | undefined | null): bigint {
+  if (!value) return 0n;
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
 }

@@ -17,6 +17,8 @@ type Target = {
   hookId: string;
   tokenAddress: Address;
   poolAddress: Address;
+  curveAddress: Address | null;
+  curveStage: "pending" | "deploying" | "active" | "graduated" | "failed";
   decimals: number;
   priceUsd: number;
 };
@@ -29,6 +31,15 @@ const SWAP_V2_EVENT = parseAbiItem(
 );
 const SWAP_V3_EVENT = parseAbiItem(
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
+);
+const CURVE_BUY_EVENT = parseAbiItem(
+  "event Buy(address indexed buyer, uint256 ethIn, uint256 tokensOut, uint256 ethReserveAfter, uint256 tokensSoldAfter)",
+);
+const CURVE_SELL_EVENT = parseAbiItem(
+  "event Sell(address indexed seller, uint256 tokensIn, uint256 ethOut, uint256 ethReserveAfter, uint256 tokensSoldAfter)",
+);
+const CURVE_GRADUATED_EVENT = parseAbiItem(
+  "event Graduated(address indexed router, uint256 tokensSeeded, uint256 ethSeeded)",
 );
 const TOKEN0_FN = parseAbiItem("function token0() view returns (address)");
 const TOKEN1_FN = parseAbiItem("function token1() view returns (address)");
@@ -86,10 +97,54 @@ export function createMarketSwapIndexer(
       tradedAt: string;
       txHash?: string;
       blockNumber?: number;
+      source?: "pool" | "curve";
     }> = [];
 
     for (const t of targets) {
       if (out.length >= perTickMaxTrades) break;
+
+      // Bonding-curve prints while the curve is still active (pre-graduation).
+      if (t.curveAddress && t.curveStage !== "graduated") {
+        const curveEvents = await readCurveEvents(publicClient, {
+          curveAddress: t.curveAddress,
+          fromBlock,
+          toBlock,
+        });
+        for (const p of curveEvents.trades) {
+          if (out.length >= perTickMaxTrades) break;
+          if (!p.blockNumber || !p.txHash) continue;
+          const blockKey = p.blockNumber.toString();
+          let ts = blockTsCache.get(blockKey);
+          if (!ts) {
+            const blk = await publicClient.getBlock({ blockNumber: p.blockNumber });
+            ts = new Date(Number(blk.timestamp) * 1000).toISOString();
+            blockTsCache.set(blockKey, ts);
+          }
+          const sizeUsd = Math.max(0.01, p.ethAmount * Math.max(1, t.priceUsd || 1));
+          out.push({
+            hookId: t.hookId,
+            tokenAddress: t.tokenAddress,
+            side: p.side,
+            priceUsd: p.priceUsd || t.priceUsd,
+            sizeUsd,
+            chainId,
+            logIndex: p.logIndex,
+            idempotencyKey:
+              p.txHash && p.logIndex !== undefined
+                ? `${t.hookId}:${chainId}:${p.txHash.toLowerCase()}:${p.logIndex}:${p.side}:curve`
+                : undefined,
+            tradedAt: ts,
+            txHash: p.txHash,
+            blockNumber: Number(p.blockNumber),
+            source: "curve",
+          });
+        }
+        if (curveEvents.graduatedAt) {
+          await markGraduated(baseUrl, t.hookId).catch(() => {});
+        }
+      }
+
+      // Uniswap v4 pool prints (post-graduation), as before.
       const tokenSide = await resolvePoolTokenIndex(
         publicClient,
         tokenSideCache,
@@ -136,6 +191,7 @@ export function createMarketSwapIndexer(
           tradedAt: ts,
           txHash: p.txHash,
           blockNumber: Number(p.blockNumber),
+          source: "pool",
         });
       }
     }
@@ -324,26 +380,155 @@ async function fetchTargets(baseUrl: string): Promise<Target[]> {
       token?: { address?: string; decimals?: number };
       pool?: { id?: string; hookAddress?: string };
       price?: { usd?: number };
+      curve?: {
+        address?: string | null;
+        stage?: string;
+      } | null;
     }>;
   };
   const listings = data.listings ?? [];
   return listings
     .map((l) => {
       const token = l.token?.address?.toLowerCase();
+      if (!token || !/^0x[a-f0-9]{40}$/.test(token)) return null;
       const poolCandidate =
         l.pool?.id?.toLowerCase() && /^0x[a-f0-9]{40}$/.test(l.pool.id.toLowerCase())
           ? l.pool.id.toLowerCase()
           : l.pool?.hookAddress?.toLowerCase();
-      if (!token || !/^0x[a-f0-9]{40}$/.test(token)) return null;
-      if (!poolCandidate || !/^0x[a-f0-9]{40}$/.test(poolCandidate)) return null;
+      const poolAddress =
+        poolCandidate && /^0x[a-f0-9]{40}$/.test(poolCandidate)
+          ? (poolCandidate as Address)
+          : ("0x0000000000000000000000000000000000000000" as Address);
+      const curveAddress = l.curve?.address?.toLowerCase();
+      const hasValidCurve = !!curveAddress && /^0x[a-f0-9]{40}$/.test(curveAddress);
+      const stage = (l.curve?.stage ?? "pending") as Target["curveStage"];
+      // Need either a real pool OR an active/graduating curve to be worth scanning.
+      if (
+        poolAddress === "0x0000000000000000000000000000000000000000" &&
+        !hasValidCurve
+      ) {
+        return null;
+      }
       return {
         hookId: l.id,
         tokenAddress: token as Address,
-        poolAddress: poolCandidate as Address,
+        poolAddress,
+        curveAddress: hasValidCurve ? (curveAddress as Address) : null,
+        curveStage: stage,
         decimals: l.token?.decimals ?? 18,
         priceUsd: Math.max(0.000001, l.price?.usd ?? 0.01),
       } as Target;
     })
     .filter((v): v is Target => !!v);
+}
+
+async function readCurveEvents(
+  publicClient: any,
+  args: { curveAddress: Address; fromBlock: bigint; toBlock: bigint },
+): Promise<{
+  trades: Array<{
+    side: "buy" | "sell";
+    txHash?: Hex;
+    blockNumber?: bigint;
+    logIndex?: number;
+    ethAmount: number;
+    tokenAmount: number;
+    priceUsd: number;
+  }>;
+  graduatedAt: bigint | null;
+}> {
+  const [buys, sells, graduated] = await Promise.all([
+    publicClient
+      .getLogs({
+        address: args.curveAddress,
+        event: CURVE_BUY_EVENT,
+        fromBlock: args.fromBlock,
+        toBlock: args.toBlock,
+      })
+      .catch(() => []),
+    publicClient
+      .getLogs({
+        address: args.curveAddress,
+        event: CURVE_SELL_EVENT,
+        fromBlock: args.fromBlock,
+        toBlock: args.toBlock,
+      })
+      .catch(() => []),
+    publicClient
+      .getLogs({
+        address: args.curveAddress,
+        event: CURVE_GRADUATED_EVENT,
+        fromBlock: args.fromBlock,
+        toBlock: args.toBlock,
+      })
+      .catch(() => []),
+  ]);
+
+  const trades: Array<{
+    side: "buy" | "sell";
+    txHash?: Hex;
+    blockNumber?: bigint;
+    logIndex?: number;
+    ethAmount: number;
+    tokenAmount: number;
+    priceUsd: number;
+  }> = [];
+
+  for (const l of buys as any[]) {
+    const ethIn = BigInt(l.args.ethIn ?? 0n);
+    const tokensOut = BigInt(l.args.tokensOut ?? 0n);
+    if (ethIn === 0n || tokensOut === 0n) continue;
+    const ethAmount = Number(formatUnits(ethIn, 18));
+    const tokenAmount = Number(formatUnits(tokensOut, 18));
+    trades.push({
+      side: "buy",
+      txHash: l.transactionHash ?? undefined,
+      blockNumber: l.blockNumber ?? undefined,
+      logIndex: l.logIndex ?? undefined,
+      ethAmount,
+      tokenAmount,
+      priceUsd: tokenAmount > 0 ? ethAmount / tokenAmount : 0,
+    });
+  }
+  for (const l of sells as any[]) {
+    const tokensIn = BigInt(l.args.tokensIn ?? 0n);
+    const ethOut = BigInt(l.args.ethOut ?? 0n);
+    if (ethOut === 0n || tokensIn === 0n) continue;
+    const ethAmount = Number(formatUnits(ethOut, 18));
+    const tokenAmount = Number(formatUnits(tokensIn, 18));
+    trades.push({
+      side: "sell",
+      txHash: l.transactionHash ?? undefined,
+      blockNumber: l.blockNumber ?? undefined,
+      logIndex: l.logIndex ?? undefined,
+      ethAmount,
+      tokenAmount,
+      priceUsd: tokenAmount > 0 ? ethAmount / tokenAmount : 0,
+    });
+  }
+
+  const graduatedAt =
+    (graduated as any[]).length > 0
+      ? ((graduated as any[])[0].blockNumber as bigint) ?? null
+      : null;
+
+  return { trades, graduatedAt };
+}
+
+async function markGraduated(baseUrl: string, hookId: string): Promise<void> {
+  const secret = process.env.UMBRELLA_RELAYER_SECRET;
+  if (!secret) return;
+  try {
+    await fetch(`${baseUrl}/api/v1/marketplace/curve-graduated`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify({ hookId }),
+    });
+  } catch {
+    // best-effort; next tick will retry
+  }
 }
 
