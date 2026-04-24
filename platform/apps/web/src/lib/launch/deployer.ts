@@ -71,16 +71,38 @@ type Clients = {
   deployer: Address;
 };
 
-function buildClients(chainId?: number): Clients {
+async function resolveHealthyRpcUrl(config: LaunchConfig): Promise<string> {
+  const errors: string[] = [];
+  for (const rpcUrl of config.rpcCandidates) {
+    try {
+      const client = createPublicClient({
+        chain: config.chain,
+        transport: http(rpcUrl),
+      }) as unknown as PublicClient;
+      await client.getBlockNumber();
+      return rpcUrl;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push(`${rpcUrl} => ${message.slice(0, 180)}`);
+    }
+  }
+  throw new LaunchDeployerError(
+    "config",
+    `no healthy RPC endpoint for launch chain ${config.chainId}. ${errors[0] ?? ""}`,
+  );
+}
+
+async function buildClients(chainId?: number): Promise<Clients> {
   const config = getLaunchConfig(chainId);
+  const rpcUrl = await resolveHealthyRpcUrl(config);
   const account = privateKeyToAccount(requirePrivateKey());
   const publicClient = createPublicClient({
     chain: config.chain,
-    transport: http(config.rpcUrl),
+    transport: http(rpcUrl),
   }) as unknown as PublicClient;
   const walletClient = createWalletClient({
     chain: config.chain,
-    transport: http(config.rpcUrl),
+    transport: http(rpcUrl),
     account,
   });
   return { publicClient, walletClient, config, deployer: account.address };
@@ -107,7 +129,7 @@ export type MissionDeployResult = {
  * the receipt so callers can record the address and continue.
  */
 export async function deployMissionRecord(args: DeployMissionArgs): Promise<MissionDeployResult> {
-  const { publicClient, walletClient, deployer } = buildClients(args.chainId);
+  const { publicClient, walletClient, deployer } = await buildClients(args.chainId);
   const artifact = loadMissionRecordArtifact();
   const missionCodeHash = keccak256(toBytes(args.missionCode));
 
@@ -169,7 +191,7 @@ export type CreateCurveResult = {
  * newly-deployed curve in one atomic step.
  */
 export async function createCurveForToken(args: CreateCurveArgs): Promise<CreateCurveResult> {
-  const { publicClient, walletClient, config } = buildClients(args.chainId);
+  const { publicClient, walletClient, config } = await buildClients(args.chainId);
 
   let hash: Hex;
   try {
@@ -253,7 +275,7 @@ export async function verifyFactoryTx(args: {
   initialSupply: bigint;
   value: bigint;
 }> {
-  const { publicClient, config } = buildClients(args.chainId);
+  const { publicClient, config } = await buildClients(args.chainId);
   const [tx, receipt] = await Promise.all([
     publicClient.getTransaction({ hash: args.txHash }),
     publicClient.getTransactionReceipt({ hash: args.txHash }),
