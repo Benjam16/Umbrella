@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
+import type { Address, Hex } from "viem";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
@@ -22,6 +23,18 @@ type HookRow = {
   solidity_code: string;
 };
 
+type ForgeWalletClient = {
+  account?: { address: Address };
+  chain?: { id: number } | null;
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  sendTransaction: (args: {
+    account: Address;
+    to: Address;
+    value: bigint;
+    chain?: unknown;
+  }) => Promise<Hex>;
+};
+
 type ForkTemplate = {
   id: string;
   prompt: string;
@@ -38,7 +51,9 @@ export default function ForgePage() {
 
 function ForgeView() {
   const router = useRouter();
-  const { address: connectedWallet, isConnected } = useAccount();
+  const { address: connectedWallet, isConnected, chainId } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const { data: walletClient } = useWalletClient();
   const searchParams = useSearchParams();
   const templateId = searchParams?.get("template") ?? null;
   const [wallet, setWallet] = useState("");
@@ -132,6 +147,9 @@ function ForgeView() {
     const payment = await requestForgePayment(result.walletAddress, {
       connectedWallet,
       isConnected,
+      connectedChainId: chainId,
+      switchChainAsync,
+      walletClient: (walletClient as unknown as ForgeWalletClient | undefined),
     });
 
     setWallet(result.walletAddress);
@@ -293,7 +311,13 @@ function ForgeView() {
 
 async function requestForgePayment(
   walletAddress: string,
-  ctx: { connectedWallet?: string; isConnected: boolean },
+  ctx: {
+    connectedWallet?: string;
+    isConnected: boolean;
+    connectedChainId?: number;
+    switchChainAsync: (args: { chainId: number }) => Promise<unknown>;
+    walletClient?: ForgeWalletClient;
+  },
 ): Promise<{ txHash: string; chainId: number }> {
   if (!ctx.isConnected || !ctx.connectedWallet) {
     throw new Error("Connect wallet before forging.");
@@ -319,20 +343,18 @@ async function requestForgePayment(
   ) {
     throw new Error(quote.error || "forge payment config unavailable");
   }
+  const targetChainId = quote.chainId ?? 84532;
 
-  const eth = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } })
-    .ethereum;
-  if (!eth?.request) throw new Error("No injected wallet provider found.");
-
-  const walletChainHex = (await eth.request({ method: "eth_chainId" })) as string;
-  const walletChainId = Number.parseInt(walletChainHex, 16);
-  if (walletChainId !== quote.chainId) {
-    throw new Error(
-      `Wrong network. Switch to chain ${quote.chainId} before forging.`,
-    );
+  if (!ctx.walletClient) throw new Error("Wallet client not ready. Reconnect and retry.");
+  if (!ctx.walletClient.account?.address) {
+    throw new Error("Connected wallet account unavailable. Reconnect and retry.");
   }
 
-  const balanceHex = (await eth.request({
+  if (ctx.connectedChainId !== targetChainId) {
+    await ctx.switchChainAsync({ chainId: targetChainId });
+  }
+
+  const balanceHex = (await ctx.walletClient.request({
     method: "eth_getBalance",
     params: [walletAddress, "latest"],
   })) as string;
@@ -344,33 +366,28 @@ async function requestForgePayment(
     );
   }
 
-  const txHash = (await eth.request({
-    method: "eth_sendTransaction",
-    params: [
-      {
-        from: walletAddress,
-        to: quote.treasuryAddress,
-        value: quote.minPaymentHex,
-        chainId: `0x${quote.chainId.toString(16)}`,
-      },
-    ],
-  })) as string;
+  const txHash = (await ctx.walletClient.sendTransaction({
+    account: ctx.walletClient.account.address,
+    to: quote.treasuryAddress as Address,
+    value: requiredWei,
+    chain: ctx.walletClient.chain?.id === targetChainId ? ctx.walletClient.chain : undefined,
+  })) as Hex;
 
   if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
     throw new Error("payment transaction did not return a valid tx hash");
   }
 
-  await waitForReceipt(eth, txHash);
-  return { txHash, chainId: quote.chainId };
+  await waitForReceipt(ctx.walletClient, txHash);
+  return { txHash, chainId: targetChainId };
 }
 
 async function waitForReceipt(
-  eth: { request: (args: unknown) => Promise<unknown> },
+  walletClient: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> },
   txHash: string,
 ): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    const receipt = (await eth.request({
+    const receipt = (await walletClient.request({
       method: "eth_getTransactionReceipt",
       params: [txHash],
     })) as { status?: string } | null;
