@@ -13,7 +13,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <ToasterProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-ink-950 text-zinc-100">
         <AppTopNav />
-        <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </div>
     </ToasterProvider>
   );

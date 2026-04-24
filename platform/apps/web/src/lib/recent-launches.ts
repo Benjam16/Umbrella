@@ -17,6 +17,10 @@ export type PendingLaunch = {
   id: string;
   /** Mirrors the Forge row primary key once known. */
   hookId?: string;
+  /** Filled when launch completes; used for BaseScan + verification UI. */
+  tokenAddress?: string;
+  chainId?: number;
+  launchType?: "agent" | "token";
   walletAddress: string;
   name: string;
   symbol: string;
@@ -84,7 +88,7 @@ export function upsertPendingLaunch(entry: PendingLaunch): PendingLaunch[] {
 
 export function markLaunchReady(
   id: string,
-  patch: Partial<Pick<PendingLaunch, "hookId" | "model">> = {},
+  patch: Partial<Pick<PendingLaunch, "hookId" | "model" | "tokenAddress" | "chainId" | "launchType">> = {},
 ): void {
   const list = read();
   const idx = list.findIndex((p) => p.id === id || p.hookId === id);

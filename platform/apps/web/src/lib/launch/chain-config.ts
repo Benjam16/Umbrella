@@ -54,11 +54,36 @@ function pickBigInt(name: string, value: string | undefined, fallback?: bigint):
   }
 }
 
+/**
+ * Returns true if an RPC URL is obviously unconfigured (still contains a
+ * `<placeholder>` token or the literal string "your-"). Many Vercel deploys
+ * leave Alchemy URLs like `https://base-sepolia.g.alchemy.com/v2/<your-key>`
+ * in env vars — we must treat those as "not set" so we don't hammer a broken
+ * endpoint and throw confusing JSON-parse errors.
+ */
+function isPlaceholderRpcUrl(url: string): boolean {
+  const v = url.trim();
+  if (!v) return true;
+  if (/[<>]/.test(v)) return true;
+  if (/%3c|%3e/i.test(v)) return true;
+  if (/your[-_](?:alchemy[-_])?(?:api[-_])?key/i.test(v)) return true;
+  if (/\/(?:YOUR_|REPLACE_|PLACEHOLDER)/i.test(v)) return true;
+  try {
+    new URL(v);
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 function buildRpcCandidates(primary: string | undefined, publicFallback: string): string[] {
-  const out = [primary?.trim() ?? "", process.env.BASE_RPC_URL?.trim() ?? "", publicFallback]
+  const raw = [primary?.trim() ?? "", process.env.BASE_RPC_URL?.trim() ?? "", publicFallback];
+  const out = raw
     .map((s) => s?.trim() ?? "")
-    .filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx);
-  return out;
+    .filter((s) => s.length > 0 && !isPlaceholderRpcUrl(s));
+  const deduped = out.filter((s, idx, arr) => arr.indexOf(s) === idx);
+  if (deduped.length === 0) deduped.push(publicFallback);
+  return deduped;
 }
 
 export function defaultLaunchChainId(): number {

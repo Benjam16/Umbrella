@@ -48,6 +48,11 @@ export type AgentListing = {
   symbol: string;
   /** Human name, e.g. "Yield Reaper". */
   name: string;
+  /**
+   * Hero image: Supabase public URL or `agent-images/...` path
+   * (resolve with getAgentImageUrl). Parsed from forge prompt `Branding:` when present.
+   */
+  imageUrl?: string | null;
   tagline: string;
   category: AgentCategory;
   blueprintId: string;
@@ -106,7 +111,10 @@ export type AgentListing = {
     graduationThresholdWei: string;
     progress: number;
     deployError: string | null;
-    verifiedAt: string | null;
+    /** Mission record (`UmbrellaAgentMissionRecord`) verified on Basescan. */
+    missionVerifiedAt: string | null;
+    /** Bonding curve (`UmbrellaBondingCurve`) verified on Basescan. */
+    curveVerifiedAt: string | null;
   };
 };
 

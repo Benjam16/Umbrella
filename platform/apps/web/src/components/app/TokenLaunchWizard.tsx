@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
+import { resolvePublicAssetUrl } from "@/lib/resolvePublicAssetUrl";
 
 type Identity = {
   name: string;
@@ -14,7 +15,12 @@ type Mission = {
   category: "trading" | "research" | "execution" | "content" | "other";
 };
 
+export type LaunchType = "agent" | "token";
+
 export type WizardResult = {
+  launchType: LaunchType;
+  /** Optional first buy on the bonding curve after launch (ETH, decimal string). */
+  initialBuyEth?: string;
   identity: Identity;
   mission: Mission;
   walletAddress: string;
@@ -27,6 +33,7 @@ type Props = {
    * flow so the wizard opens pre-populated with a public template.
    */
   initial?: Partial<{
+    launchType: LaunchType;
     identity: Partial<Identity>;
     mission: Partial<Mission>;
     walletAddress: string;
@@ -35,7 +42,7 @@ type Props = {
   contextNotice?: { label: string; detail?: string };
 };
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 const CATEGORIES: Array<{ id: Mission["category"]; label: string; hint: string }> = [
   { id: "trading", label: "Trading", hint: "Agent executes on-chain strategies" },
@@ -58,6 +65,8 @@ function symbolize(raw: string): string {
 
 export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
   const [step, setStep] = useState<Step>(1);
+  const [launchType, setLaunchType] = useState<LaunchType>(initial?.launchType ?? "agent");
+  const [initialBuyEth, setInitialBuyEth] = useState("");
   const [identity, setIdentity] = useState<Identity>({
     name: initial?.identity?.name ?? "",
     symbol: initial?.identity?.symbol ?? "",
@@ -85,24 +94,30 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const validStep1 =
+  const validStep1 = launchType === "agent" || launchType === "token";
+  const validStep2 =
     identity.name.trim().length >= 2 && identity.symbol.trim().length >= 2;
-  const validStep2 = mission.prompt.trim().length >= 12;
-  const validStep3 = isValidWallet(wallet);
+  const promptMin = launchType === "agent" ? 12 : 4;
+  const validStep3 = mission.prompt.trim().length >= promptMin;
+  const validStep4 = isValidWallet(wallet);
 
   const canNext = useMemo(() => {
     if (step === 1) return validStep1;
     if (step === 2) return validStep2;
-    return validStep3;
-  }, [step, validStep1, validStep2, validStep3]);
+    if (step === 3) return validStep3;
+    return validStep4;
+  }, [step, validStep1, validStep2, validStep3, validStep4]);
 
   async function submit() {
-    if (!validStep1 || !validStep2 || !validStep3) return;
+    if (!validStep1 || !validStep2 || !validStep3 || !validStep4) return;
     setSubmitting(true);
     setError(null);
     setResult(null);
     try {
+      const buy = initialBuyEth.trim();
       const payload: WizardResult = {
+        launchType,
+        initialBuyEth: buy && Number(buy) > 0 ? buy : undefined,
         identity,
         mission,
         walletAddress: wallet.trim(),
@@ -126,7 +141,7 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
             Token Launch Wizard
           </p>
           <h2 className="text-lg font-semibold text-zinc-100">
-            3 steps to forge your agent token
+            Four steps to launch on Umbrella
           </h2>
         </div>
         <button
@@ -156,29 +171,40 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
       <div className="mt-5 grid gap-5 md:grid-cols-5">
         <div className="md:col-span-3">
           {step === 1 && (
+            <StepLaunchType launchType={launchType} onChange={setLaunchType} />
+          )}
+          {step === 2 && (
             <StepIdentity
               identity={identity}
               setIdentity={setIdentity}
-              valid={validStep1}
+              valid={validStep2}
               wallet={wallet}
             />
           )}
-          {step === 2 && (
-            <StepMission mission={mission} setMission={setMission} valid={validStep2} />
-          )}
           {step === 3 && (
+            <StepMission
+              mission={mission}
+              setMission={setMission}
+              valid={validStep3}
+              launchType={launchType}
+            />
+          )}
+          {step === 4 && (
             <StepForge
               wallet={wallet}
               setWallet={(v) => {
                 setWalletTouched(true);
                 setWallet(v);
               }}
+              initialBuyEth={initialBuyEth}
+              setInitialBuyEth={setInitialBuyEth}
               walletAutoFilled={
                 isConnected && wallet === connectedAddress && !walletTouched
               }
               identity={identity}
               mission={mission}
-              valid={validStep3}
+              launchType={launchType}
+              valid={validStep4}
               submitting={submitting}
               result={result}
               error={error}
@@ -188,7 +214,13 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
         </div>
 
         <aside className="md:col-span-2">
-          <SummaryPanel identity={identity} mission={mission} wallet={wallet} />
+          <SummaryPanel
+            launchType={launchType}
+            identity={identity}
+            mission={mission}
+            wallet={wallet}
+            initialBuyEth={initialBuyEth}
+          />
           {showTechnical && (
             <TechnicalPanel identity={identity} mission={mission} wallet={wallet} />
           )}
@@ -199,12 +231,12 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
         <button
           type="button"
           disabled={step === 1 || submitting}
-          onClick={() => setStep(((step - 1) || 1) as Step)}
+          onClick={() => setStep((s) => (s > 1 ? ((s - 1) as Step) : 1))}
           className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40 hover:border-signal-blue hover:text-signal-blue"
         >
           Back
         </button>
-        {step < 3 ? (
+        {step < 4 ? (
           <button
             type="button"
             disabled={!canNext}
@@ -230,9 +262,10 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
 
 function StepBar({ current }: { current: Step }) {
   const steps: Array<{ id: Step; label: string }> = [
-    { id: 1, label: "Identity" },
-    { id: 2, label: "Mission" },
-    { id: 3, label: "Forge" },
+    { id: 1, label: "Type" },
+    { id: 2, label: "Identity" },
+    { id: 3, label: "Mission" },
+    { id: 4, label: "Forge" },
   ];
   return (
     <div className="flex items-center gap-3">
@@ -265,6 +298,56 @@ function StepBar({ current }: { current: Step }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function StepLaunchType({
+  launchType,
+  onChange,
+}: {
+  launchType: LaunchType;
+  onChange: (t: LaunchType) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-400">
+        Choose whether you are launching a full <span className="text-zinc-200">AI agent token</span>{" "}
+        (mission hooks, Gunnr-style enforcement, attested runs) or a{" "}
+        <span className="text-zinc-200">sovereign token</span> without the agentic stack.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => onChange("agent")}
+          className={`rounded-xl border p-4 text-left transition ${
+            launchType === "agent"
+              ? "border-signal-blue bg-signal-blue/10"
+              : "border-zinc-800 bg-ink-950 hover:border-zinc-600"
+          }`}
+        >
+          <p className="font-mono text-[10px] uppercase tracking-widest text-signal-blue">Agent</p>
+          <p className="mt-2 text-sm font-semibold text-zinc-100">Agent + workforce</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Full mission pipeline, Kimi hook, and on-chain attestation story.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("token")}
+          className={`rounded-xl border p-4 text-left transition ${
+            launchType === "token"
+              ? "border-signal-green bg-signal-green/10"
+              : "border-zinc-800 bg-ink-950 hover:border-zinc-600"
+          }`}
+        >
+          <p className="font-mono text-[10px] uppercase tracking-widest text-signal-green">Token</p>
+          <p className="mt-2 text-sm font-semibold text-zinc-100">Sovereign asset</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Standard launch: curve + trading, minimal agent attachments.
+          </p>
+        </button>
+      </div>
     </div>
   );
 }
@@ -397,7 +480,7 @@ function ImageUploadField({
           {hasImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={imageUrl}
+              src={resolvePublicAssetUrl(imageUrl) || imageUrl}
               alt="Token preview"
               className="h-full w-full object-cover"
             />
@@ -463,14 +546,17 @@ function StepMission({
   mission,
   setMission,
   valid,
+  launchType,
 }: {
   mission: Mission;
   setMission: (next: Mission) => void;
   valid: boolean;
+  launchType: LaunchType;
 }) {
+  const agentCopy = launchType === "agent";
   return (
     <div className="space-y-4">
-      <Field label="Agent Category">
+      <Field label={agentCopy ? "Agent category" : "Label (optional grouping)"}>
         <div className="flex flex-wrap gap-2">
           {CATEGORIES.map((c) => {
             const active = mission.category === c.id;
@@ -492,17 +578,28 @@ function StepMission({
           })}
         </div>
       </Field>
-      <Field label="What should this agent do?">
+      <Field
+        label={agentCopy ? "What should this agent do?" : "Token note"}
+        hint={agentCopy ? undefined : "Short description for metadata and Kimi — 4+ characters."}
+      >
         <textarea
           value={mission.prompt}
           onChange={(e) => setMission({ ...mission, prompt: e.target.value })}
-          placeholder="Describe the agent's behavior, goals, and constraints. Example: 'Monitor Base liquidity pools and execute arbitrage when net profit exceeds gas by 15%.'"
+          placeholder={
+            agentCopy
+              ? "Describe the agent's behavior, goals, and constraints. Example: 'Monitor Base liquidity pools and execute arbitrage when net profit exceeds gas by 15%.'"
+              : "e.g. 'Community memecoin with fixed supply and bonding-curve distribution.'"
+          }
           rows={6}
           className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-signal-blue"
         />
       </Field>
       {!valid && (
-        <p className="text-xs text-zinc-500">Provide at least 12 characters of mission context.</p>
+        <p className="text-xs text-zinc-500">
+          {agentCopy
+            ? "Provide at least 12 characters of mission context."
+            : "Provide at least 4 characters (token launches stay lightweight)."}
+        </p>
       )}
     </div>
   );
@@ -511,9 +608,12 @@ function StepMission({
 function StepForge({
   wallet,
   setWallet,
+  initialBuyEth,
+  setInitialBuyEth,
   walletAutoFilled,
   identity,
   mission,
+  launchType,
   valid,
   submitting,
   result,
@@ -522,9 +622,12 @@ function StepForge({
 }: {
   wallet: string;
   setWallet: (v: string) => void;
+  initialBuyEth: string;
+  setInitialBuyEth: (v: string) => void;
   walletAutoFilled?: boolean;
   identity: Identity;
   mission: Mission;
+  launchType: LaunchType;
   valid: boolean;
   submitting: boolean;
   result: string | null;
@@ -533,6 +636,18 @@ function StepForge({
 }) {
   return (
     <div className="space-y-4">
+      <Field
+        label="Optional: creator snipe (ETH)"
+        hint="Bundled into the server relay’s createCurve transaction — tokens go to you in the same block. The Umbrella deployer wallet must hold this ETH plus gas (see UMBRELLA_DEPLOYER_PRIVATE_KEY in env)."
+      >
+        <input
+          value={initialBuyEth}
+          onChange={(e) => setInitialBuyEth(e.target.value)}
+          inputMode="decimal"
+          placeholder="0 — skip"
+          className="w-full rounded-md border border-zinc-800 bg-ink-950 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-signal-blue"
+        />
+      </Field>
       <Field
         label="Your Wallet"
         hint={
@@ -558,9 +673,8 @@ function StepForge({
 
       <div className="rounded-lg border border-zinc-800 bg-ink-950/60 p-4">
         <p className="text-xs text-zinc-400">
-          Forge will verify payment to the Umbrella treasury, run the Kimi pipeline, and
-          publish generated artifacts to your wallet feed. Output appears below
-          automatically once completed.
+          Forge will deploy your token, run Kimi{launchType === "agent" ? " with full agent constraints" : " with a minimal sovereign hook"}, and
+          open the bonding curve. Supply is fixed at mint — no additional minting after deployment.
         </p>
       </div>
 
@@ -571,7 +685,9 @@ function StepForge({
       {submitting && (
         <div className="rounded-lg border border-signal-blue/40 bg-signal-blue/5 p-3 font-mono text-xs text-signal-blue">
           <p>[forge] queuing launch for {identity.symbol || "TOKEN"}...</p>
-          <p>[forge] mission: {mission.category}</p>
+          <p>
+            [forge] mode: {launchType} · mission: {mission.category}
+          </p>
           <p>[forge] waiting for on-chain payment + kimi response...</p>
         </div>
       )}
@@ -619,13 +735,17 @@ function Field({
 }
 
 function SummaryPanel({
+  launchType,
   identity,
   mission,
   wallet,
+  initialBuyEth,
 }: {
+  launchType: LaunchType;
   identity: Identity;
   mission: Mission;
   wallet: string;
+  initialBuyEth: string;
 }) {
   return (
     <div className="rounded-xl border border-zinc-800 bg-ink-950/60 p-4">
@@ -633,6 +753,18 @@ function SummaryPanel({
         Live Preview
       </p>
       <div className="mt-2 space-y-2 text-sm">
+        <p className="text-zinc-300">
+          <span className="text-zinc-500">Type: </span>
+          <span className="font-mono">
+            {launchType === "agent" ? "Agent (full stack)" : "Sovereign token"}
+          </span>
+        </p>
+        {initialBuyEth.trim() && (
+          <p className="text-zinc-300">
+            <span className="text-zinc-500">Creator snipe: </span>
+            <span className="font-mono">{initialBuyEth.trim()} ETH</span>
+          </p>
+        )}
         <p className="text-zinc-300">
           <span className="text-zinc-500">Name: </span>
           {identity.name || <em className="text-zinc-600">pending</em>}
@@ -675,7 +807,7 @@ function TechnicalPanel({
     identity,
     mission,
     walletAddress: wallet,
-    pipeline: "kimi → supabase → hook registration",
+    pipeline: "kimi → supabase → hook registration (agent mode includes Gunnr-style enforcement hints in the server prompt)",
   };
   return (
     <div className="mt-3 rounded-xl border border-zinc-800 bg-ink-950/60 p-4">

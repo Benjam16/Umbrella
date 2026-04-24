@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { notFound, useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +13,9 @@ import {
   timeAgo,
   type AgentListing,
 } from "@/lib/marketplace";
+import { ExternalLinkIcon } from "@/components/icons/ExternalLinkIcon";
+import { addressExplorerUrl } from "@/lib/chains/explorer";
+import { getAgentImageUrl } from "@/lib/supabase-client";
 
 /**
  * Dedicated profile page for a single agent. This is the "resume" view —
@@ -119,6 +123,7 @@ export default function AgentProfilePage() {
 
   if (listing === null) notFound();
   if (!listing) return null;
+  const explorerChainId = liveCurve?.chainId ?? listing.curve?.chainId ?? 8453;
   const chartSpark = liveSpark.length > 1 ? liveSpark : listing.spark;
   const shownPrice = livePrice ?? listing.price.usd;
   const shownDelta = liveDelta ?? listing.price.change24h;
@@ -137,7 +142,20 @@ export default function AgentProfilePage() {
           </Link>
 
           <header className="mt-4 flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
+            <div className="flex min-w-0 gap-4">
+              {listing.imageUrl ? (
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+                  <Image
+                    src={getAgentImageUrl(listing.imageUrl)}
+                    alt={listing.name}
+                    width={80}
+                    height={80}
+                    className="h-20 w-20 object-cover"
+                    unoptimized
+                  />
+                </div>
+              ) : null}
+              <div className="min-w-0">
               <h1 className="truncate text-2xl font-semibold text-zinc-100">
                 {listing.name}
                 <span className="ml-3 font-mono text-[14px] text-zinc-500">
@@ -168,6 +186,7 @@ export default function AgentProfilePage() {
                     {listing.forksCount} fork{listing.forksCount === 1 ? "" : "s"}
                   </span>
                 )}
+              </div>
               </div>
             </div>
 
@@ -348,15 +367,19 @@ export default function AgentProfilePage() {
                 <h3 className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500">
                   On-chain
                 </h3>
-                <Row label="Token">
-                  <span className="truncate">{listing.token.address.slice(0, 14)}…</span>
-                </Row>
+                <AddressExplorerRow
+                  label="Token"
+                  chainId={explorerChainId}
+                  address={listing.token.address}
+                />
                 <Row label="Pool id">
                   <span>{listing.pool.id.slice(0, 14)}…</span>
                 </Row>
-                <Row label="Hook">
-                  <span>{listing.pool.hookAddress.slice(0, 14)}…</span>
-                </Row>
+                <AddressExplorerRow
+                  label="Hook"
+                  chainId={explorerChainId}
+                  address={listing.pool.hookAddress}
+                />
                 <Row label="Chain">base</Row>
               </div>
 
@@ -393,7 +416,8 @@ export default function AgentProfilePage() {
                 graduationThresholdWei: liveCurve.graduationThresholdWei,
                 progress: liveCurve.progress,
                 deployError: listing.curve?.deployError ?? null,
-                verifiedAt: listing.curve?.verifiedAt ?? null,
+                missionVerifiedAt: listing.curve?.missionVerifiedAt ?? null,
+                curveVerifiedAt: listing.curve?.curveVerifiedAt ?? null,
               }
             : listing.curve,
         }}
@@ -426,6 +450,44 @@ function Metric({
         {label}
       </div>
       <div className={`mt-1 font-mono text-[16px] ${toneCls}`}>{value}</div>
+    </div>
+  );
+}
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+function AddressExplorerRow({
+  label,
+  chainId,
+  address,
+}: {
+  label: string;
+  chainId: number;
+  address: string;
+}) {
+  const a = (address ?? "").trim();
+  if (!a || a.toLowerCase() === ZERO_ADDR || !/^0x[a-fA-F0-9]{40}$/i.test(a)) {
+    return (
+      <div className="flex items-center justify-between py-1">
+        <span className="text-zinc-500">{label}</span>
+        <span className="text-zinc-500">—</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 py-1">
+      <span className="shrink-0 text-zinc-500">{label}</span>
+      <a
+        href={addressExplorerUrl(chainId, a)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-w-0 max-w-[min(100%,14rem)] items-center justify-end gap-1 font-mono text-signal-blue hover:underline"
+      >
+        <span className="truncate">
+          {a.slice(0, 8)}…{a.slice(-4)}
+        </span>
+        <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0" />
+      </a>
     </div>
   );
 }

@@ -65,19 +65,29 @@ type RowWithCurve = {
   curve_address?: string | null;
   curve_stage?: string | null;
   verified_at?: string | null;
+  curve_verified_at?: string | null;
   deploy_error?: string | null;
+  image_url?: string | null;
 };
+
+function extractBrandingImageUrl(prompt: string | null): string | null {
+  if (!prompt) return null;
+  const m = prompt.match(/Branding:\s*(\S+)/i);
+  return m?.[1]?.trim() ?? null;
+}
 
 function toListing(row: RowWithCurve, thresholdWei: string): AgentListing {
   const symbol = inferSymbol(row.prompt, row.id);
   const name = inferName(row.prompt, symbol);
   const createdAtMs = new Date(row.created_at).getTime();
   const stage = normalizeStage(row.curve_stage);
+  const imageUrl = row.image_url?.trim() || extractBrandingImageUrl(row.prompt);
 
   return {
     id: row.id,
     symbol,
     name,
+    imageUrl,
     tagline: (row.prompt ?? "").slice(0, 120) || `${row.model} forged agent`,
     category: "research",
     blueprintId: "user-forged",
@@ -126,7 +136,8 @@ function toListing(row: RowWithCurve, thresholdWei: string): AgentListing {
       graduationThresholdWei: thresholdWei,
       progress: 0,
       deployError: row.deploy_error ?? null,
-      verifiedAt: row.verified_at ?? null,
+      missionVerifiedAt: row.verified_at ?? null,
+      curveVerifiedAt: row.curve_verified_at ?? null,
     },
   };
 }

@@ -66,8 +66,22 @@ contract UmbrellaAgentTokenFactoryTest is Test {
 
     function test_createAgentToken_rejectsInsufficientLaunchFee() public {
         vm.prank(user);
-        vm.expectRevert(UmbrellaAgentTokenFactory.InsufficientLaunchFee.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UmbrellaAgentTokenFactory.InsufficientLaunchFee.selector, LAUNCH_FEE, LAUNCH_FEE - 1
+            )
+        );
         factory.createAgentToken{ value: LAUNCH_FEE - 1 }("A", "A", "fee", 0);
+    }
+
+    function test_createAgentToken_refundsExcessValue() public {
+        uint256 before = user.balance;
+        vm.prank(user);
+        address tokenAddr = factory.createAgentToken{ value: LAUNCH_FEE + 0.1 ether }(
+            "A", "A", "refund-ex", 0
+        );
+        assertTrue(tokenAddr != address(0));
+        assertEq(before - user.balance, LAUNCH_FEE, "only launch fee is spent, excess refunded");
     }
 
     function test_predictTokenAddress_matchesDeploy() public {

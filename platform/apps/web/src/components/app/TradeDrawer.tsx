@@ -10,12 +10,20 @@ import {
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
-import { erc20Abi, formatEther, parseEther, type Address, type Hex } from "viem";
+import { erc20Abi, formatEther, parseEther, zeroAddress, type Address, type Hex } from "viem";
 
 import type { AgentListing } from "@/lib/marketplace";
 import { formatUsd } from "@/lib/marketplace";
-import { bondingCurveAbi } from "@/lib/launch/abi";
+import { addressExplorerUrl } from "@/lib/chains/explorer";
+import { bondingCurveAbi, umbrellaV4SimpleSwapAbi, weth9Abi } from "@/lib/launch/abi";
 import { ensureWalletSession } from "@/lib/client-wallet-auth";
+import {
+  WETH_ADDRESS,
+  buildDefaultV4PoolKey,
+  tokenIsCurrency0,
+  v4SwapRouterForChain,
+  wethIsCurrency0,
+} from "@/lib/v4/poolKey";
 
 type Side = "buy" | "sell";
 
@@ -29,8 +37,9 @@ type Props = {
 /**
  * In-app pump.fun-style swap. While the agent's curve is `active`, the user
  * trades directly against the UmbrellaBondingCurve contract (buy with ETH,
- * sell tokens back to the curve). Once the curve graduates to a Uniswap v4
- * pool, the same drawer flips to in-app v4 swaps — no external DEX links.
+ * sell tokens back to the curve). Once the curve graduates, in-app v4
+ * WETH/TOKEN swaps run when `NEXT_PUBLIC_UMBRELLA_V4_SWAP_ROUTER_*` is set
+ * (wrap → approve → UmbrellaV4SimpleSwap; sells optionally unwrap to ETH).
  */
 export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Props) {
   const [side, setSide] = useState<Side>("buy");
@@ -49,8 +58,19 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
   const curve = listing.curve ?? null;
   const curveAddress = (curve?.address ?? "") as Address | "";
   const curveChainId = curve?.chainId ?? null;
+  const tradeChainId = curveChainId ?? chainId;
+  const v4SwapRouter = useMemo(() => v4SwapRouterForChain(tradeChainId), [tradeChainId]);
+  const tokenAddress = listing.token?.address as string | undefined;
+  const tokenAddressOk = Boolean(
+    tokenAddress && /^0x[a-fA-F0-9]{40}$/i.test(tokenAddress),
+  );
+  const canTradeActive = curve?.stage === "active" && /^0x[a-fA-F0-9]{40}$/i.test(curveAddress);
+  const canTradeGraduated = curve?.stage === "graduated";
+  const canV4Swap = Boolean(canTradeGraduated && tokenAddressOk && v4SwapRouter);
+  const canTrade = canTradeActive || canV4Swap;
+
   const publicClient = usePublicClient({
-    chainId: curveChainId ?? chainId,
+    chainId: tradeChainId,
   });
 
   useEffect(() => {
@@ -62,8 +82,6 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
     setQuote(null);
   }, [open, initialSide]);
 
-  const canTradeActive = curve?.stage === "active" && /^0x[a-fA-F0-9]{40}$/.test(curveAddress);
-  const canTradeGraduated = curve?.stage === "graduated";
   const parsed = Number(amount);
 
   const refreshQuote = useCallback(async () => {
@@ -126,12 +144,18 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
       setSubmitError("Connect wallet to continue.");
       return;
     }
-    if (!canTradeActive) {
-      setSubmitError(
-        canTradeGraduated
-          ? "Graduated pool trading lands in the next release — try a curve agent for now."
-          : "Curve not active yet for this agent.",
-      );
+    if (!canTrade) {
+      if (canTradeGraduated) {
+        setSubmitError(
+          !tokenAddressOk
+            ? "Token address missing for this listing."
+            : !v4SwapRouter
+              ? "V4 in-app swap is not configured. Set NEXT_PUBLIC_UMBRELLA_V4_SWAP_ROUTER_SEPOLIA (or _BASE) to your deployed UmbrellaV4SimpleSwap address."
+              : "Cannot trade on this market.",
+        );
+      } else {
+        setSubmitError("Curve not active yet for this agent.");
+      }
       return;
     }
     if (!walletClient || !publicClient) {
@@ -142,11 +166,11 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
       setSubmitError("Enter an amount greater than zero.");
       return;
     }
-    if (curveChainId && chainId !== curveChainId) {
+    if (chainId !== tradeChainId) {
       try {
-        await switchChainAsync({ chainId: curveChainId });
+        await switchChainAsync({ chainId: tradeChainId });
       } catch (err) {
-        setSubmitError(`Switch to chain ${curveChainId} to trade: ${err instanceof Error ? err.message : ""}`);
+        setSubmitError(`Switch to chain ${tradeChainId} to trade: ${err instanceof Error ? err.message : ""}`);
         return;
       }
     }
@@ -169,62 +193,165 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
       }).catch(() => {});
 
       let txHash: Hex;
-      if (side === "buy") {
-        const ethIn = parseEther(amount as `${number}`);
-        const tokensOut = (await publicClient.readContract({
-          address: curveAddress as Address,
-          abi: bondingCurveAbi,
-          functionName: "previewBuyFromEth",
-          args: [ethIn],
-        })) as bigint;
-        if (tokensOut === 0n) throw new Error("curve quoted 0 tokens — try a larger amount");
-        const minOut = (tokensOut * 95n) / 100n; // 5% slippage tolerance
-        txHash = await walletClient.writeContract({
-          account: walletClient.account!,
-          chain: walletClient.chain,
-          address: curveAddress as Address,
-          abi: bondingCurveAbi,
-          functionName: "buy",
-          args: [minOut, ethIn],
-          value: ethIn,
-        });
-      } else {
-        const tokensIn = parseEther(amount as `${number}`);
-        const allowance = (await publicClient.readContract({
-          address: listing.token.address as Address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, curveAddress as Address],
-        })) as bigint;
-        if (allowance < tokensIn) {
-          const approveHash = await walletClient.writeContract({
+      if (canV4Swap) {
+        const tokenAddr = tokenAddress as Address;
+        const hookRaw = listing.pool?.hookAddress;
+        const hooks: Address =
+          hookRaw && /^0x[a-fA-F0-9]{40}$/i.test(hookRaw) ? (hookRaw as Address) : zeroAddress;
+        const poolKey = buildDefaultV4PoolKey({ token: tokenAddr, hooks });
+        const router = v4SwapRouter as Address;
+        const minV4Out = 0n; // no on-chain quote yet; see UmbrellaV4SimpleSwap slippage
+        if (side === "buy") {
+          const wethIn = parseEther(amount as `${number}`);
+          const depHash = await walletClient.writeContract({
             account: walletClient.account!,
             chain: walletClient.chain,
+            address: WETH_ADDRESS,
+            abi: weth9Abi,
+            functionName: "deposit",
+            value: wethIn,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: depHash });
+          const wethAllow = (await publicClient.readContract({
+            address: WETH_ADDRESS,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [address, router],
+          })) as bigint;
+          if (wethAllow < wethIn) {
+            const ap = await walletClient.writeContract({
+              account: walletClient.account!,
+              chain: walletClient.chain,
+              address: WETH_ADDRESS,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [router, wethIn],
+            });
+            await publicClient.waitForTransactionReceipt({ hash: ap });
+          }
+          const zfo = wethIsCurrency0(poolKey);
+          txHash = await walletClient.writeContract({
+            account: walletClient.account!,
+            chain: walletClient.chain,
+            address: router,
+            abi: umbrellaV4SimpleSwapAbi,
+            functionName: "swapExactIn",
+            args: [poolKey, zfo, wethIn, minV4Out, "0x"],
+          });
+        } else {
+          const tokensIn = parseEther(amount as `${number}`);
+          const tAllow = (await publicClient.readContract({
+            address: tokenAddr,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [address, router],
+          })) as bigint;
+          if (tAllow < tokensIn) {
+            const ap = await walletClient.writeContract({
+              account: walletClient.account!,
+              chain: walletClient.chain,
+              address: tokenAddr,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [router, tokensIn],
+            });
+            await publicClient.waitForTransactionReceipt({ hash: ap });
+          }
+          const wethBefore = (await publicClient.readContract({
+            address: WETH_ADDRESS,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [address],
+          })) as bigint;
+          const zfo = tokenIsCurrency0({ token: tokenAddr, key: poolKey });
+          txHash = await walletClient.writeContract({
+            account: walletClient.account!,
+            chain: walletClient.chain,
+            address: router,
+            abi: umbrellaV4SimpleSwapAbi,
+            functionName: "swapExactIn",
+            args: [poolKey, zfo, tokensIn, minV4Out, "0x"],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          const wethAfter = (await publicClient.readContract({
+            address: WETH_ADDRESS,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [address],
+          })) as bigint;
+          const wethOut = wethAfter - wethBefore;
+          if (wethOut > 0n) {
+            const wdraw = await walletClient.writeContract({
+              account: walletClient.account!,
+              chain: walletClient.chain,
+              address: WETH_ADDRESS,
+              abi: weth9Abi,
+              functionName: "withdraw",
+              args: [wethOut],
+            });
+            await publicClient.waitForTransactionReceipt({ hash: wdraw });
+          }
+        }
+        if (side === "buy") {
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+        }
+      } else {
+        if (side === "buy") {
+          const ethIn = parseEther(amount as `${number}`);
+          const tokensOut = (await publicClient.readContract({
+            address: curveAddress as Address,
+            abi: bondingCurveAbi,
+            functionName: "previewBuyFromEth",
+            args: [ethIn],
+          })) as bigint;
+          if (tokensOut === 0n) throw new Error("curve quoted 0 tokens — try a larger amount");
+          const minOut = (tokensOut * 95n) / 100n; // 5% slippage tolerance
+          txHash = await walletClient.writeContract({
+            account: walletClient.account!,
+            chain: walletClient.chain,
+            address: curveAddress as Address,
+            abi: bondingCurveAbi,
+            functionName: "buy",
+            args: [minOut, ethIn],
+            value: ethIn,
+          });
+        } else {
+          const tokensIn = parseEther(amount as `${number}`);
+          const allowance = (await publicClient.readContract({
             address: listing.token.address as Address,
             abi: erc20Abi,
-            functionName: "approve",
-            args: [curveAddress as Address, tokensIn],
+            functionName: "allowance",
+            args: [address, curveAddress as Address],
+          })) as bigint;
+          if (allowance < tokensIn) {
+            const approveHash = await walletClient.writeContract({
+              account: walletClient.account!,
+              chain: walletClient.chain,
+              address: listing.token.address as Address,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [curveAddress as Address, tokensIn],
+            });
+            await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          }
+          const [ethOutNet] = (await publicClient.readContract({
+            address: curveAddress as Address,
+            abi: bondingCurveAbi,
+            functionName: "quoteSell",
+            args: [tokensIn],
+          })) as [bigint, bigint];
+          const minEth = (ethOutNet * 95n) / 100n;
+          txHash = await walletClient.writeContract({
+            account: walletClient.account!,
+            chain: walletClient.chain,
+            address: curveAddress as Address,
+            abi: bondingCurveAbi,
+            functionName: "sell",
+            args: [tokensIn, minEth],
           });
-          await publicClient.waitForTransactionReceipt({ hash: approveHash });
         }
-        const [ethOutNet] = (await publicClient.readContract({
-          address: curveAddress as Address,
-          abi: bondingCurveAbi,
-          functionName: "quoteSell",
-          args: [tokensIn],
-        })) as [bigint, bigint];
-        const minEth = (ethOutNet * 95n) / 100n;
-        txHash = await walletClient.writeContract({
-          account: walletClient.account!,
-          chain: walletClient.chain,
-          address: curveAddress as Address,
-          abi: bondingCurveAbi,
-          functionName: "sell",
-          args: [tokensIn, minEth],
-        });
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
       }
-
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
       setSuccessMessage(`Trade confirmed. tx: ${txHash.slice(0, 10)}…${txHash.slice(-4)}`);
       setAmount("");
       setQuote(null);
@@ -243,7 +370,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
           onClick={onClose}
         >
           <motion.div
@@ -253,7 +380,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className={`absolute left-1/2 top-1/2 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border ${glow} bg-ink-900/95 p-5`}
+            className={`w-[min(420px,calc(100vw-32px))] rounded-2xl border ${glow} bg-ink-900/95 p-5`}
           >
             <div className="mb-4 flex items-start justify-between">
               <div>
@@ -332,13 +459,15 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
 
             <div className="mt-3 rounded-md border border-zinc-800 bg-ink-950 p-3 font-mono text-[11px] text-zinc-400">
               <Row label="You receive">
-                {quote?.tokensOut && side === "buy"
-                  ? `${formatEther(quote.tokensOut).slice(0, 10)} ${listing.symbol}`
-                  : quote?.ethOutNet && side === "sell"
-                    ? `${formatEther(quote.ethOutNet).slice(0, 10)} ETH`
-                    : "—"}
+                {canV4Swap
+                  ? "— (v4 quote not loaded)"
+                  : quote?.tokensOut && side === "buy"
+                    ? `${formatEther(quote.tokensOut).slice(0, 10)} ${listing.symbol}`
+                    : quote?.ethOutNet && side === "sell"
+                      ? `${formatEther(quote.ethOutNet).slice(0, 10)} ETH`
+                      : "—"}
               </Row>
-              <Row label="Slippage tolerance">5%</Row>
+              <Row label="Slippage tolerance">{canV4Swap ? "0 (MVP — add quoter)" : "5%"}</Row>
               <Row label="Curve stage">{curve?.stage ?? "pending"}</Row>
               <Row label="Curve">
                 {curveAddress
@@ -349,7 +478,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
 
             <button
               type="button"
-              disabled={!canTradeActive || !Number.isFinite(parsed) || parsed <= 0 || submitting}
+              disabled={!canTrade || !Number.isFinite(parsed) || parsed <= 0 || submitting}
               onClick={executeTrade}
               className={`mt-4 w-full rounded-md border py-2.5 font-mono text-[12px] uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 side === "buy"
@@ -373,10 +502,34 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
             <p className="mt-3 text-center text-[10px] text-zinc-600">
               {canTradeActive
                 ? "Trades route directly into the UmbrellaBondingCurve contract."
-                : canTradeGraduated
-                  ? "This curve has graduated. Full v4 pool swaps arrive in the next release."
-                  : "Trading opens automatically when the launch pipeline completes."}
+                : canV4Swap
+                  ? "Graduated: swaps use the default WETH/TOKEN v4 pool (0.3% / tick 60) via UmbrellaV4SimpleSwap. Buys wrap ETH to WETH first."
+                  : canTradeGraduated
+                    ? "This curve has graduated. Set NEXT_PUBLIC_UMBRELLA_V4_SWAP_ROUTER_SEPOLIA (or _BASE) to enable in-app v4 swaps, or use the explorer links below."
+                    : "Trading opens automatically when the launch pipeline completes."}
             </p>
+            {canTradeGraduated && listing.token?.address && (
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                <a
+                  href={addressExplorerUrl(curveChainId ?? chainId, listing.token.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[10px] uppercase tracking-widest text-signal-blue hover:underline"
+                >
+                  Token on BaseScan
+                </a>
+                {listing.pool?.hookAddress && (
+                  <a
+                    href={addressExplorerUrl(curveChainId ?? chainId, listing.pool.hookAddress)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[10px] uppercase tracking-widest text-signal-blue hover:underline"
+                  >
+                    Pool hook
+                  </a>
+                )}
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}

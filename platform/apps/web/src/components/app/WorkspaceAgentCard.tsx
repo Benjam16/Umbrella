@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSignMessage } from "wagmi";
+import { ExternalLinkIcon } from "@/components/icons/ExternalLinkIcon";
+import { addressExplorerUrl } from "@/lib/chains/explorer";
+import { SovereignProofBadge } from "@/components/app/SovereignProofBadge";
 import { ensureWalletSession } from "@/lib/client-wallet-auth";
 import {
   clearLaunch,
@@ -32,9 +35,19 @@ export function WorkspaceAgentCard({ launch }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forks, setForks] = useState<number | null>(null);
+  const [sovereign, setSovereign] = useState<{
+    chainId: number;
+    missionVerifiedAt: string | null;
+    curveVerifiedAt: string | null;
+    missionAddress: string | null;
+    curveAddress: string | null;
+  } | null>(null);
+  const [tokenFromServer, setTokenFromServer] = useState<string | null>(null);
   const { signMessageAsync } = useSignMessage();
 
   const hookId = launch.hookId;
+  const chainId = launch.chainId ?? 84532;
+  const tokenAddr = (launch.tokenAddress ?? tokenFromServer ?? "").trim();
   const ready = launch.status === "ready";
   const canToggle = ready && !!hookId && !saving;
 
@@ -55,7 +68,16 @@ export function WorkspaceAgentCard({ launch }: Props) {
         );
         if (!res.ok) return;
         const data = (await res.json()) as {
-          hooks?: Array<{ id: string; is_public: boolean }>;
+          hooks?: Array<{
+            id: string;
+            is_public: boolean;
+            token_address?: string | null;
+            chain_id?: number | null;
+            verified_at?: string | null;
+            curve_verified_at?: string | null;
+            hook_address?: string | null;
+            curve_address?: string | null;
+          }>;
         };
         const match = data.hooks?.find((h) => h.id === hookId);
         if (!match || cancelled) return;
@@ -63,6 +85,14 @@ export function WorkspaceAgentCard({ launch }: Props) {
           setBroadcast(match.is_public);
           markLaunchVisibility(launch.id, match.is_public);
         }
+        setSovereign({
+          chainId: match.chain_id ?? chainId,
+          missionVerifiedAt: match.verified_at ?? null,
+          curveVerifiedAt: match.curve_verified_at ?? null,
+          missionAddress: match.hook_address ?? null,
+          curveAddress: match.curve_address ?? null,
+        });
+        if (match.token_address) setTokenFromServer(match.token_address);
       } catch {
         /* best-effort hydration */
       }
@@ -155,6 +185,33 @@ export function WorkspaceAgentCard({ launch }: Props) {
       </div>
 
       <p className="line-clamp-2 text-xs text-zinc-400">{launch.prompt}</p>
+
+      {ready && tokenAddr && /^0x[a-fA-F0-9]{40}$/.test(tokenAddr) && (
+        <a
+          href={addressExplorerUrl(chainId, tokenAddr)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex w-fit max-w-full items-center gap-2 rounded-md border border-zinc-700 px-2 py-1 font-mono text-[10px] text-signal-blue hover:border-signal-blue"
+        >
+          <span className="min-w-0 shrink truncate text-zinc-300">
+            {tokenAddr.slice(0, 6)}…{tokenAddr.slice(-4)}
+          </span>
+          <span className="inline-flex items-center gap-0.5 uppercase tracking-widest text-signal-blue">
+            BaseScan
+            <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
+          </span>
+        </a>
+      )}
+
+      {ready && sovereign && (
+        <SovereignProofBadge
+          chainId={sovereign.chainId}
+          missionVerifiedAt={sovereign.missionVerifiedAt}
+          curveVerifiedAt={sovereign.curveVerifiedAt}
+          missionContractAddress={sovereign.missionAddress}
+          curveContractAddress={sovereign.curveAddress}
+        />
+      )}
 
       {ready && (
         <div className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-ink-900/50 px-2 py-1.5">

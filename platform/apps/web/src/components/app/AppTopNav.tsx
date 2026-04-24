@@ -1,16 +1,16 @@
 "use client";
 
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
+import { GlobalTicker } from "@/components/app/GlobalTicker";
 
 /**
  * Primary tab nav for every page inside `/app` and `/docs`.
  *
- * Bankr-style: horizontal tabs on top, ConnectButton on the right. The
- * overflow menu holds the "operator" destinations (Runs / Nodes / Settings)
- * so the top bar stays clean for the most common journeys.
+ * A global {@link GlobalTicker} runs above the bar (live `market_trades`). The
+ * "More" menu uses Radix (shadcn-style) for Runs, Nodes, Settings, and Portfolio.
  */
 
 type Tab = { href: string; label: string; match: (path: string) => boolean };
@@ -34,92 +34,91 @@ const OVERFLOW: Tab[] = [
 
 export function AppTopNav() {
   const pathname = usePathname() ?? "/app";
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target as Node)) setOverflowOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
+  const overflowActive = OVERFLOW.some((t) => t.match(pathname));
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-zinc-800/70 bg-ink-950/85 px-5 backdrop-blur">
-      <Link href="/" className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-        <span className="text-signal-blue">☂</span>
-        <span>Umbrella</span>
-        <span className="ml-1 rounded-full bg-signal-blue/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-signal-blue">
-          v0.1
-        </span>
-      </Link>
+    <div className="relative z-50 w-full shrink-0">
+      <GlobalTicker />
+      <header className="flex h-14 w-full items-center gap-4 border-b border-zinc-800/70 bg-ink-950/85 px-5 backdrop-blur">
+        <Link href="/" className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+          <span className="text-signal-blue">☂</span>
+          <span>Umbrella</span>
+          <span className="ml-1 rounded-full bg-signal-blue/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-signal-blue">
+            v0.1
+          </span>
+        </Link>
 
-      <nav className="flex items-center gap-0.5 overflow-x-auto">
-        {PRIMARY.map((tab) => {
-          const active = tab.match(pathname);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`relative flex items-center px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${
-                active
-                  ? "text-signal-blue"
-                  : "text-zinc-400 hover:text-zinc-100"
-              }`}
-            >
-              {tab.label}
-              {active && (
-                <span className="pointer-events-none absolute inset-x-3 -bottom-[12px] h-[2px] rounded-full bg-signal-blue" />
-              )}
-            </Link>
-          );
-        })}
+        <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+          {PRIMARY.map((tab) => {
+            const active = tab.match(pathname);
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={`relative flex items-center px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${
+                  active
+                    ? "text-signal-blue"
+                    : "text-zinc-400 hover:text-zinc-100"
+                }`}
+              >
+                {tab.label}
+                {active && (
+                  <span className="pointer-events-none absolute inset-x-3 -bottom-[12px] h-[2px] rounded-full bg-signal-blue" />
+                )}
+              </Link>
+            );
+          })}
 
-        <div ref={menuRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setOverflowOpen((v) => !v)}
-            aria-expanded={overflowOpen}
-            className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${
-              OVERFLOW.some((t) => t.match(pathname))
-                ? "text-signal-blue"
-                : "text-zinc-400 hover:text-zinc-100"
-            }`}
-          >
-            More ▾
-          </button>
-          {overflowOpen && (
-            <div className="absolute left-0 z-50 mt-1 w-[180px] overflow-hidden rounded-md border border-zinc-800 bg-ink-950/95 shadow-xl backdrop-blur">
-              <ul>
+          <DropdownMenu.Root modal={false}>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                aria-label="More navigation"
+                className={`shrink-0 rounded-md px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition outline-none hover:text-zinc-100 data-[state=open]:text-signal-blue ${
+                  overflowActive
+                    ? "text-signal-blue"
+                    : "text-zinc-400"
+                }`}
+              >
+                More ▾
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="z-[200] min-w-[200px] rounded-md border border-zinc-800 bg-ink-950/95 p-1 shadow-xl backdrop-blur"
+                sideOffset={6}
+                align="start"
+                avoidCollisions
+              >
                 {OVERFLOW.map((tab) => {
                   const active = tab.match(pathname);
                   return (
-                    <li key={tab.href}>
+                    <DropdownMenu.Item
+                      key={tab.href}
+                      asChild
+                    >
                       <Link
                         href={tab.href}
-                        onClick={() => setOverflowOpen(false)}
-                        className={`block px-3 py-2 font-mono text-[11px] uppercase tracking-wider transition ${
+                        className={`block cursor-pointer select-none rounded-sm px-3 py-2 font-mono text-[11px] uppercase tracking-wider outline-none ${
                           active
                             ? "bg-signal-blue/10 text-signal-blue"
-                            : "text-zinc-300 hover:bg-zinc-800/40 hover:text-zinc-100"
-                        }`}
+                            : "text-zinc-300"
+                        } data-[highlighted]:bg-zinc-800/60 data-[highlighted]:text-zinc-100`}
                       >
                         {tab.label}
                       </Link>
-                    </li>
+                    </DropdownMenu.Item>
                   );
                 })}
-              </ul>
-            </div>
-          )}
-        </div>
-      </nav>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </nav>
 
-      <div className="ml-auto flex items-center gap-2">
-        <ConnectWalletButton />
-      </div>
-    </header>
+        <div className="ml-auto flex items-center gap-2">
+          <ConnectWalletButton />
+        </div>
+      </header>
+    </div>
   );
 }

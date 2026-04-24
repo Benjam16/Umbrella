@@ -178,6 +178,7 @@ function ForgeView() {
       name: result.identity.name,
       symbol: result.identity.symbol,
       category: result.mission.category,
+      launchType: result.launchType,
       prompt: result.mission.prompt,
       status: "initializing",
       createdAt: Date.now(),
@@ -216,10 +217,14 @@ function ForgeView() {
           walletAddress: result.walletAddress,
           factoryTxHash,
           chainId: quote.chainId,
+          launchType: result.launchType,
           identity: result.identity,
           mission: result.mission,
           permit,
           forkedFrom: template?.id ?? null,
+          ...(result.initialBuyEth
+            ? { initialBuyEth: result.initialBuyEth }
+            : {}),
         }),
       });
       if (!launchRes.ok) {
@@ -231,7 +236,12 @@ function ForgeView() {
       };
       if (data.launch?.hookId) {
         setActiveHookId(data.launch.hookId);
-        markLaunchReady(launchId, { hookId: data.launch.hookId });
+        markLaunchReady(launchId, {
+          hookId: data.launch.hookId,
+          tokenAddress: data.launch.tokenAddress,
+          chainId: quote.chainId,
+          launchType: result.launchType,
+        });
       }
       setWallet(result.walletAddress);
     } catch (err) {
@@ -252,7 +262,7 @@ function ForgeView() {
               Umbrella · Forge
             </p>
             <h1 className="mt-2 text-3xl font-semibold text-zinc-100">
-              Launch your agent token in 3 steps
+              Launch a sovereign token or full agent
             </h1>
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
               Your wallet deploys the token, Umbrella deploys the mission record + bonding curve
@@ -364,7 +374,8 @@ function deriveBlueprintId(result: WizardResult): string {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
     .slice(0, 12);
-  return `umbrella-${slug}-${stamp}`;
+  const kind = result.launchType === "token" ? "sv" : "ag";
+  return `umbrella-${kind}-${slug}-${stamp}`;
 }
 
 async function fetchLaunchQuote(args: {

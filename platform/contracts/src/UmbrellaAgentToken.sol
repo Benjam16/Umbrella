@@ -53,6 +53,11 @@ contract UmbrellaAgentToken is ERC20Permit, Ownable2Step, IUmbrellaAgentToken {
     ///         Purely informational; the hook itself only needs `successRate`.
     address public performanceHook;
 
+    /// @notice Supply minted once in the constructor. There is no public `mint`;
+    ///         subsequent supply changes are only via transfers, user burns, or
+    ///         `burnTreasuryTokens` on the contract float.
+    uint256 public immutable initialMintedSupply;
+
     // --- rolling stats -----------------------------------------------------
 
     /// @inheritdoc IUmbrellaAgentToken
@@ -105,6 +110,7 @@ contract UmbrellaAgentToken is ERC20Permit, Ownable2Step, IUmbrellaAgentToken {
         if (attester_ == address(0) || owner_ == address(0)) revert ZeroAddress();
         blueprintId = blueprintId_;
         attester = attester_;
+        initialMintedSupply = initialSupply;
         if (initialSupply > 0) _mint(owner_, initialSupply);
     }
 

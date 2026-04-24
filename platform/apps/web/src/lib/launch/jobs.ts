@@ -14,7 +14,8 @@ export type LaunchJobStep =
   | "deploy_mission_record"
   | "create_curve"
   | "mark_active"
-  | "verify_basescan";
+  | "verify_basescan"
+  | "verify_curve_basescan";
 
 export type LaunchJobStatus = "pending" | "running" | "completed" | "failed";
 

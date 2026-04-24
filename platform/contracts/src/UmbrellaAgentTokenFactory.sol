@@ -88,7 +88,13 @@ contract UmbrellaAgentTokenFactory is Ownable2Step {
             if (!ok) revert EthTransferFailed();
             emit LaunchFeePaid(msg.sender, fee);
         }
-        return _deploy(name_, symbol_, blueprintId_, defaultAttester, msg.sender, initialSupply);
+        address t = _deploy(name_, symbol_, blueprintId_, defaultAttester, msg.sender, initialSupply);
+        uint256 excess = msg.value - fee;
+        if (excess > 0) {
+            (bool refundOk, ) = payable(msg.sender).call{value: excess}("");
+            if (!refundOk) revert EthTransferFailed();
+        }
+        return t;
     }
 
     /**

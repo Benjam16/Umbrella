@@ -1,15 +1,19 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { MarketSparkline } from "@/components/app/MarketSparkline";
 import { TradeDrawer } from "@/components/app/TradeDrawer";
+import { ExternalLinkIcon } from "@/components/icons/ExternalLinkIcon";
+import { addressExplorerUrl } from "@/lib/chains/explorer";
 import {
   formatNumber,
   formatPct,
   formatUsd,
   type AgentListing,
 } from "@/lib/marketplace";
+import { getAgentImageUrl } from "@/lib/supabase-client";
 
 type Props = {
   listing: AgentListing;
@@ -31,6 +35,7 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
   // to the Forge wizard seeded with their public template instead of opening
   // a TradeDrawer (which would resolve to a 0x0 pool).
   const isUserForged = listing.blueprintId === "user-forged";
+  const explorerChainId = listing.curve?.chainId ?? 84532;
 
   const rowTone = listing.performance.active
     ? "border-l-signal-green/70"
@@ -45,22 +50,52 @@ export function AgentMarketRow({ listing, onLaunch }: Props) {
       className={`grid grid-cols-12 items-center gap-3 border-b border-l-2 ${rowTone} border-b-zinc-800/60 bg-ink-900/40 px-3 py-2 text-[12px] hover:bg-ink-900/80`}
     >
       <div className="col-span-3 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-semibold text-zinc-100">{listing.name}</span>
-          <span className="font-mono text-[10px] text-zinc-500">${listing.symbol}</span>
-          {listing.performance.active && (
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-green" />
-          )}
-          {typeof listing.forksCount === "number" && listing.forksCount > 0 && (
-            <span
-              title={`Forked ${listing.forksCount} time${listing.forksCount === 1 ? "" : "s"}`}
-              className="rounded-full border border-signal-blue/40 bg-signal-blue/10 px-1.5 py-[1px] font-mono text-[9px] uppercase tracking-widest text-signal-blue"
-            >
-              {listing.forksCount}×
-            </span>
-          )}
+        <div className="flex gap-2">
+          {listing.imageUrl ? (
+            <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+              <Image
+                src={getAgentImageUrl(listing.imageUrl)}
+                alt={listing.name}
+                width={32}
+                height={32}
+                className="h-8 w-8 object-cover"
+                unoptimized
+              />
+            </div>
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate font-semibold text-zinc-100">{listing.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                ${listing.symbol}
+              </span>
+              {listing.performance.active && (
+                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-signal-green" />
+              )}
+              {typeof listing.forksCount === "number" && listing.forksCount > 0 && (
+                <span
+                  title={`Forked ${listing.forksCount} time${listing.forksCount === 1 ? "" : "s"}`}
+                  className="shrink-0 rounded-full border border-signal-blue/40 bg-signal-blue/10 px-1.5 py-[1px] font-mono text-[9px] uppercase tracking-widest text-signal-blue"
+                >
+                  {listing.forksCount}×
+                </span>
+              )}
+              {/^0x[a-fA-F0-9]{40}$/i.test(listing.token.address) && (
+                <a
+                  href={addressExplorerUrl(explorerChainId, listing.token.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="View token on BaseScan"
+                  className="shrink-0 text-signal-blue opacity-80 hover:opacity-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLinkIcon className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+            <p className="truncate text-[11px] text-zinc-500">{listing.tagline}</p>
+          </div>
         </div>
-        <p className="truncate text-[11px] text-zinc-500">{listing.tagline}</p>
       </div>
 
       <div className="col-span-1 text-right font-mono text-zinc-100">

@@ -78,7 +78,7 @@ export const curveFactoryAbi = [
   {
     type: "function",
     name: "createCurveWithPermit",
-    stateMutability: "nonpayable",
+    stateMutability: "payable",
     inputs: [
       { name: "token", type: "address" },
       { name: "creator", type: "address" },
@@ -250,6 +250,75 @@ export const bondingCurveAbi = [
       { name: "tokensSent", type: "uint256", indexed: false },
       { name: "ethSent", type: "uint256", indexed: false },
     ],
+  },
+] as const;
+
+/**
+ * WETH9 on Base — deposit ETH to WETH, withdraw WETH to ETH.
+ */
+export const weth9Abi = [
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "payable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "withdraw",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+/**
+ * {@link platform/contracts/src/v4/UmbrellaV4SimpleSwap.sol} — exact-in v4 single-hop.
+ */
+export const umbrellaV4SimpleSwapAbi = [
+  {
+    type: "function",
+    name: "swapExactIn",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "key",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "hooks", type: "address" },
+        ],
+      },
+      { name: "zeroForOne", type: "bool" },
+      { name: "amountIn", type: "uint256" },
+      { name: "minOut", type: "uint256" },
+      { name: "hookData", type: "bytes" },
+    ],
+    outputs: [{ name: "delta", type: "int256" }],
   },
 ] as const;
 

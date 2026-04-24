@@ -66,6 +66,7 @@ contract UmbrellaAgentTokenTest is Test {
 
     function test_initialState() public view {
         assertEq(token.balanceOf(owner), 1_000_000e18);
+        assertEq(token.initialMintedSupply(), 1_000_000e18);
         assertEq(token.attester(), attester);
         assertEq(token.blueprintId(), "alpha-scribe");
         assertEq(token.successRate(), 0);

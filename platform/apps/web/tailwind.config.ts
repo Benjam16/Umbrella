@@ -36,11 +36,16 @@ export default {
       },
       animation: {
         "ink-float": "inkFloat 9s ease-in-out infinite",
+        "ticker-marquee": "tickerMarquee 45s linear infinite",
       },
       keyframes: {
         inkFloat: {
           "0%, 100%": { transform: "translate3d(0, 0, 0) rotate(-1deg)" },
           "50%": { transform: "translate3d(0, -6px, 0) rotate(1deg)" },
+        },
+        tickerMarquee: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
         },
       },
     },

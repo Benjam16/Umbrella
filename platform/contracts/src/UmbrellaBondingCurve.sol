@@ -36,6 +36,10 @@ contract UmbrellaBondingCurve {
 
     // --- immutables --------------------------------------------------------
 
+    /// @notice `UmbrellaCurveFactory` address (msg.sender at deploy). Used to
+    ///         route first buy to the listed creator atomically at curve creation.
+    address public immutable factory;
+
     IERC20 public immutable token;
     address public immutable creator;
     address public immutable hookAddress;
@@ -107,6 +111,7 @@ contract UmbrellaBondingCurve {
     error ZeroTrade();
     error InsufficientCurveEth(uint256 have, uint256 need);
     error TooManyTokens(uint256 requested, uint256 available);
+    error OnlyFactory();
 
     constructor(
         address token_,
@@ -131,6 +136,7 @@ contract UmbrellaBondingCurve {
         require(swapFeeBps_ <= 1_000, "fee>10%");
         require(treasuryFeeBps_ <= swapFeeBps_, "treasuryFee>totalFee");
 
+        factory = msg.sender;
         token = IERC20(token_);
         creator = creator_;
         hookAddress = hookAddress_;
@@ -230,6 +236,38 @@ contract UmbrellaBondingCurve {
 
         emit Buy(msg.sender, ethGross, tokensOut, tokensSold, ethReserve);
         return ethGross;
+    }
+
+    /// @notice Same as `buy` but delivers tokens to `recipient`. Only the
+    ///         deploying `UmbrellaCurveFactory` may call (creator snipe at launch).
+    function buyTo(address recipient, uint256 tokensOut, uint256 maxEthIn) external payable returns (uint256 ethGross) {
+        if (msg.sender != factory) revert OnlyFactory();
+        if (graduated) revert AlreadyGraduated();
+        if (tokensOut == 0) revert ZeroTrade();
+        (uint256 ethNet, uint256 ethGross_) = quoteBuy(tokensOut);
+        if (ethGross_ > maxEthIn) revert SlippageExceeded(ethGross_, maxEthIn);
+        if (msg.value < ethGross_) revert SlippageExceeded(msg.value, ethGross_);
+
+        tokensSold += tokensOut;
+        uint256 treasuryCut = (ethNet * treasuryFeeBps) / 10_000;
+        ethReserve += (ethGross_ - treasuryCut);
+
+        token.safeTransfer(recipient, tokensOut);
+
+        if (treasuryCut > 0) {
+            (bool ok, ) = treasury.call{ value: treasuryCut }("");
+            require(ok, "treasury send failed");
+            emit TreasuryFeeSent(treasury, treasuryCut);
+        }
+
+        uint256 refund = msg.value - ethGross_;
+        if (refund > 0) {
+            (bool ok2, ) = msg.sender.call{ value: refund }("");
+            require(ok2, "refund failed");
+        }
+
+        emit Buy(recipient, ethGross_, tokensOut, tokensSold, ethReserve);
+        return ethGross_;
     }
 
     /// @notice Sell tokens back to the curve. Caller must have approved the

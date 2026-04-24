@@ -11,7 +11,8 @@
     "deploy:sepolia": "forge script script/DeployUmbrella.s.sol --rpc-url base_sepolia --broadcast --verify -vvv",
     "deploy:platform-hook:sepolia": "forge script script/DeployPlatformFeeHook.s.sol --rpc-url base_sepolia --broadcast --verify -vvv",
     "deploy:mainnet": "forge script script/DeployUmbrella.s.sol --rpc-url base --broadcast --verify -vvv",
-    "sync": "tsx scripts/sync-registry.ts"
+    "sync": "tsx scripts/sync-registry.ts",
+    "flatten:curve": "forge flatten src/UmbrellaBondingCurve.sol -o verify/UmbrellaBondingCurve.flattened.sol"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

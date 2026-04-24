@@ -24,12 +24,16 @@ export type GeneratedHookRow = {
   curve_stage?: string | null;
   /** Set when the mission record contract is verified on Basescan. */
   verified_at?: string | null;
+  /** Set when the bonding curve contract is verified on Basescan. */
+  curve_verified_at?: string | null;
   /** Populated when any deploy step fails; surfaced in LaunchStatusPanel. */
   deploy_error?: string | null;
   /** keccak256 of the Kimi Solidity output. */
   mission_code_hash?: string | null;
   /** Supabase storage path pointing at the full Kimi source. */
   metadata_uri?: string | null;
+  /** Forge identity image: storage path, https URL, or null. */
+  image_url?: string | null;
   created_at: string;
 };
 
@@ -39,6 +43,11 @@ type PaymentVerification = {
   to: Address;
   value: bigint;
 };
+
+function isMissingForkedFromColumnError(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return /forked_from/i.test(message) && /column/i.test(message);
+}
 
 function webhookSigningKey(): string | null {
   return process.env.ALCHEMY_WEBHOOK_SIGNING_KEY?.trim() || null;
@@ -142,6 +151,27 @@ export async function verifyPaymentFromWebhook(
   };
 }
 
+/**
+ * Reject obvious placeholder env values such as
+ * `https://base-sepolia.g.alchemy.com/v2/<your-key>`. Those crash viem with
+ * "Unexpected token 'M', \"Must be au\"..." because the provider returns
+ * `"Must be authenticated"` plaintext instead of JSON.
+ */
+function isPlaceholderRpcUrl(url: string): boolean {
+  const v = url.trim();
+  if (!v) return true;
+  if (/[<>]/.test(v)) return true;
+  if (/%3c|%3e/i.test(v)) return true;
+  if (/your[-_](?:alchemy[-_])?(?:api[-_])?key/i.test(v)) return true;
+  if (/\/(?:YOUR_|REPLACE_|PLACEHOLDER)/i.test(v)) return true;
+  try {
+    new URL(v);
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 function buildRpcCandidates(args: { isSepolia: boolean }): string[] {
   const raw = args.isSepolia
     ? [
@@ -151,9 +181,14 @@ function buildRpcCandidates(args: { isSepolia: boolean }): string[] {
         "https://sepolia.base.org",
       ]
     : [process.env.BASE_RPC_URL, "https://mainnet.base.org"];
-  return raw
+  const cleaned = raw
     .map((v) => v?.trim() ?? "")
-    .filter((v, idx, arr) => v.length > 0 && arr.indexOf(v) === idx);
+    .filter((v) => v.length > 0 && !isPlaceholderRpcUrl(v));
+  const deduped = cleaned.filter((v, idx, arr) => arr.indexOf(v) === idx);
+  if (deduped.length === 0) {
+    deduped.push(args.isSepolia ? "https://sepolia.base.org" : "https://mainnet.base.org");
+  }
+  return deduped;
 }
 
 async function fetchTxWithRpcFailover(args: {
@@ -291,10 +326,12 @@ export async function insertGeneratedHook(row: {
   tokenAddress?: string | null;
   poolAddress?: string | null;
   hookAddress?: string | null;
+  imageUrl?: string | null;
 }): Promise<GeneratedHookRow> {
   const supabase = getServerSupabase();
   if (!supabase) throw new Error("supabase not configured");
 
+  const img = row.imageUrl?.trim();
   const payload = {
     wallet_address: row.walletAddress.toLowerCase(),
     tx_hash: row.txHash.toLowerCase(),
@@ -307,13 +344,23 @@ export async function insertGeneratedHook(row: {
     token_address: row.tokenAddress ?? null,
     pool_address: row.poolAddress ?? null,
     hook_address: row.hookAddress ?? null,
+    image_url: img && img.length > 0 ? img : null,
   };
 
-  const { data, error } = await supabase
-    .from("generated_hooks")
-    .insert(payload)
-    .select("*")
-    .single();
+  const attemptInsert = async (includeForkedFrom: boolean) => {
+    const insertPayload = includeForkedFrom
+      ? payload
+      : {
+          ...payload,
+          forked_from: undefined,
+        };
+    return supabase.from("generated_hooks").insert(insertPayload).select("*").single();
+  };
+
+  let { data, error } = await attemptInsert(true);
+  if (error && isMissingForkedFromColumnError(error.message)) {
+    ({ data, error } = await attemptInsert(false));
+  }
   if (error || !data) throw new Error(error?.message ?? "failed to insert generated hook");
   return data as GeneratedHookRow;
 }
@@ -389,13 +436,14 @@ export async function getPublicHookById(
   | "token_address"
   | "pool_address"
   | "hook_address"
+  | "image_url"
 > | null> {
   const supabase = getServerSupabase();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("generated_hooks")
     .select(
-      "id, wallet_address, model, prompt, created_at, token_address, pool_address, hook_address",
+      "id, wallet_address, model, prompt, created_at, token_address, pool_address, hook_address, image_url",
     )
     .eq("id", id)
     .eq("is_public", true)
@@ -411,6 +459,7 @@ export async function getPublicHookById(
     | "token_address"
     | "pool_address"
     | "hook_address"
+    | "image_url"
   > | null;
 }
 
@@ -428,7 +477,9 @@ export type PublicHookListing = Pick<
   | "curve_address"
   | "curve_stage"
   | "verified_at"
+  | "curve_verified_at"
   | "deploy_error"
+  | "image_url"
 >;
 
 export async function listPublicHooks(limit = 50): Promise<PublicHookListing[]> {
@@ -437,7 +488,7 @@ export async function listPublicHooks(limit = 50): Promise<PublicHookListing[]> 
   const { data, error } = await supabase
     .from("generated_hooks")
     .select(
-      "id, wallet_address, model, prompt, created_at, chain_id, token_address, pool_address, hook_address, curve_address, curve_stage, verified_at, deploy_error",
+      "id, wallet_address, model, prompt, created_at, chain_id, token_address, pool_address, hook_address, curve_address, curve_stage, verified_at, curve_verified_at, deploy_error, image_url",
     )
     .eq("is_public", true)
     .order("created_at", { ascending: false })
@@ -459,7 +510,10 @@ export async function countForks(hookId: string): Promise<number> {
     .from("generated_hooks")
     .select("id", { count: "exact", head: true })
     .eq("forked_from", hookId);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isMissingForkedFromColumnError(error.message)) return 0;
+    throw new Error(error.message);
+  }
   return count ?? 0;
 }
 
@@ -480,7 +534,10 @@ export async function countForksForMany(
     .from("generated_hooks")
     .select("forked_from")
     .in("forked_from", hookIds);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isMissingForkedFromColumnError(error.message)) return out;
+    throw new Error(error.message);
+  }
 
   for (const row of (data ?? []) as Array<{ forked_from: string | null }>) {
     if (row.forked_from && row.forked_from in out) out[row.forked_from] += 1;

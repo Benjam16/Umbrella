@@ -171,6 +171,8 @@ export type CreateCurveArgs = {
   creator: Address;
   hookAddress: Address;
   tokensSeed: bigint;
+  /** Optional creator snipe: ETH forwarded into `createCurveWithPermit` (deployer pays). */
+  initialBuyWei?: bigint;
   permit: {
     deadline: bigint;
     v: number;
@@ -192,6 +194,7 @@ export type CreateCurveResult = {
  */
 export async function createCurveForToken(args: CreateCurveArgs): Promise<CreateCurveResult> {
   const { publicClient, walletClient, config } = await buildClients(args.chainId);
+  const value = args.initialBuyWei ?? 0n;
 
   let hash: Hex;
   try {
@@ -210,8 +213,9 @@ export async function createCurveForToken(args: CreateCurveArgs): Promise<Create
         args.permit.r,
         args.permit.s,
       ],
+      value,
     });
-    hash = await walletClient.writeContract(request);
+    hash = await walletClient.writeContract({ ...request, value });
   } catch (err) {
     throw new LaunchDeployerError(
       "deployCurve",
@@ -331,6 +335,88 @@ export async function verifyFactoryTx(args: {
  * Utility for Basescan verify submissions — produces the constructor arg blob
  * the API expects (hex without the 0x prefix).
  */
+const umbrellaBondingCurveViewAbi = parseAbi([
+  "function token() view returns (address)",
+  "function creator() view returns (address)",
+  "function hookAddress() view returns (address)",
+  "function treasury() view returns (address)",
+  "function router() view returns (address)",
+  "function tokensAvailable() view returns (uint256)",
+  "function k() view returns (uint256)",
+  "function graduationThresholdWei() view returns (uint256)",
+  "function graduationSeedWei() view returns (uint256)",
+  "function swapFeeBps() view returns (uint16)",
+  "function treasuryFeeBps() view returns (uint16)",
+]);
+
+/**
+ * Reads immutables from a deployed `UmbrellaBondingCurve` and ABI-encodes the
+ * constructor args for Basescan (hex without 0x), matching
+ * `UmbrellaCurveFactory`'s deploy order.
+ */
+export async function encodeBondingCurveConstructorArgsFromChain(args: {
+  chainId?: number;
+  curveAddress: Address;
+}): Promise<string> {
+  const { publicClient } = await buildClients(args.chainId);
+  const a = args.curveAddress;
+  const [
+    token,
+    creator,
+    hookAddress,
+    treasury,
+    router,
+    tokensAvailable,
+    k,
+    graduationThresholdWei,
+    graduationSeedWei,
+    swapFeeBps,
+    treasuryFeeBps,
+  ] = await Promise.all([
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "token" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "creator" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "hookAddress" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "treasury" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "router" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "tokensAvailable" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "k" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "graduationThresholdWei" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "graduationSeedWei" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "swapFeeBps" }),
+    publicClient.readContract({ address: a, abi: umbrellaBondingCurveViewAbi, functionName: "treasuryFeeBps" }),
+  ]);
+
+  const encoded = encodeAbiParameters(
+    [
+      { name: "token_", type: "address" },
+      { name: "creator_", type: "address" },
+      { name: "hookAddress_", type: "address" },
+      { name: "treasury_", type: "address" },
+      { name: "router_", type: "address" },
+      { name: "tokensAvailable_", type: "uint256" },
+      { name: "k_", type: "uint256" },
+      { name: "graduationThresholdWei_", type: "uint256" },
+      { name: "graduationSeedWei_", type: "uint256" },
+      { name: "swapFeeBps_", type: "uint16" },
+      { name: "treasuryFeeBps_", type: "uint16" },
+    ],
+    [
+      token,
+      creator,
+      hookAddress,
+      treasury,
+      router,
+      tokensAvailable,
+      k,
+      graduationThresholdWei,
+      graduationSeedWei,
+      swapFeeBps,
+      treasuryFeeBps,
+    ],
+  );
+  return encoded.replace(/^0x/, "");
+}
+
 export function encodeMissionRecordConstructorArgs(args: {
   creator: Address;
   token: Address;

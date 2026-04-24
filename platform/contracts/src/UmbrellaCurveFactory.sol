@@ -67,6 +67,7 @@ contract UmbrellaCurveFactory is Ownable2Step {
     error ZeroAddress();
     error TokenSupplyZero();
     error SeedGreaterThanThreshold();
+    error EthRefundFailed();
 
     constructor(
         address owner_,
@@ -101,7 +102,7 @@ contract UmbrellaCurveFactory is Ownable2Step {
         address creator,
         address hookAddress,
         uint256 tokensSeed
-    ) public returns (address curve) {
+    ) public payable returns (address curve) {
         return _createCurveInternal(token, creator, hookAddress, tokensSeed);
     }
 
@@ -117,7 +118,7 @@ contract UmbrellaCurveFactory is Ownable2Step {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external returns (address curve) {
+    ) external payable returns (address curve) {
         IERC20Permit(token).permit(creator, address(this), tokensSeed, permitDeadline, v, r, s);
         return _createCurveInternal(token, creator, hookAddress, tokensSeed);
     }
@@ -218,5 +219,23 @@ contract UmbrellaCurveFactory is Ownable2Step {
         curveFor[token] = curve;
         allCurves.push(curve);
         emit CurveCreated(token, curve, creator, hookAddress, tokensSeed);
+
+        uint256 buyEth = msg.value;
+        if (buyEth > 0) {
+            _initialBuy(curve, creator, buyEth);
+        }
+    }
+
+    /// @dev Snipes the bonding curve for `recipient` using ETH forwarded in the
+    ///      same transaction as `createCurve*`. `msg.value` must be zero in the
+    ///      common relayer case (snipe is optional).
+    function _initialBuy(address curve, address recipient, uint256 buyEth) internal {
+        uint256 tokensOut = UmbrellaBondingCurve(payable(curve)).previewBuyFromEth(buyEth);
+        if (tokensOut == 0) {
+            (bool ok, ) = payable(msg.sender).call{ value: buyEth }("");
+            if (!ok) revert EthRefundFailed();
+            return;
+        }
+        UmbrellaBondingCurve(payable(curve)).buyTo{ value: buyEth }(recipient, tokensOut, buyEth);
     }
 }

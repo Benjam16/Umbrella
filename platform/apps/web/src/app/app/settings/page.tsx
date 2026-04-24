@@ -172,6 +172,18 @@ export default function SettingsPage() {
                       value={status.deployer?.basescanKeyConfigured ? "configured" : "missing"}
                       tone={status.deployer?.basescanKeyConfigured ? "ok" : "warn"}
                     />
+                    <StatusRow
+                      label="Active RPC"
+                      value={status.deployer?.rpcUrl ?? "–"}
+                      tone={status.deployer?.primaryRpcLooksLikePlaceholder ? "warn" : undefined}
+                    />
+                    {status.deployer?.primaryRpcLooksLikePlaceholder && (
+                      <StatusRow
+                        label="RPC warning"
+                        value="BASE_SEPOLIA_RPC_URL still contains <placeholder>. Replace it with your real Alchemy/Infura key."
+                        tone="warn"
+                      />
+                    )}
                     {status.deployer?.error && (
                       <StatusRow label="Deployer error" value={status.deployer.error} tone="warn" />
                     )}
@@ -246,6 +258,9 @@ type SystemStatus = {
     balanceEth: string | null;
     lowBalance: boolean;
     basescanKeyConfigured: boolean;
+    rpcUrl?: string | null;
+    rpcCandidates?: string[];
+    primaryRpcLooksLikePlaceholder?: boolean;
     error: string | null;
   };
   marketIndexer: {

@@ -64,32 +64,36 @@ function readLocalSource(relPath: string): string {
   );
 }
 
+const VERIFY_COMPILER = "v0.8.26+commit.8a97fa7a";
+const VERIFY_RUNS = "20000";
+
 /**
- * Single-file verify submission. We flatten-on-the-fly by pulling the
- * contract source directly off disk (everything in platform/contracts is
- * either built-in or vendored in remappings.txt, so solc sees a matching tree).
+ * `solidity-single-file` submission. Mission record is a self-contained
+ * `.sol` file. Bonding curve uses a checked-in `forge flatten` output so
+ * dependencies are inlined (see `verify/UmbrellaBondingCurve.flattened.sol`).
  */
-export async function submitVerifyMissionRecord(args: {
+async function postVerifySourceCodeSingleFile(args: {
   chainId: number;
   address: string;
+  sourceCode: string;
+  contractName: string;
   constructorArgsHex: string;
 }): Promise<VerifyStatus> {
   const key = apiKey();
   if (!key) return { state: "skipped", reason: "BASESCAN_API_KEY not set" };
 
-  const sourceCode = readLocalSource("src/UmbrellaAgentMissionRecord.sol");
   const body = new URLSearchParams();
   body.set("apikey", key);
   body.set("chainid", String(args.chainId));
   body.set("module", "contract");
   body.set("action", "verifysourcecode");
   body.set("contractaddress", args.address);
-  body.set("sourceCode", sourceCode);
+  body.set("sourceCode", args.sourceCode);
   body.set("codeformat", "solidity-single-file");
-  body.set("contractname", "UmbrellaAgentMissionRecord");
-  body.set("compilerversion", "v0.8.26+commit.8a97fa7a");
+  body.set("contractname", args.contractName);
+  body.set("compilerversion", VERIFY_COMPILER);
   body.set("optimizationUsed", "1");
-  body.set("runs", "20000");
+  body.set("runs", VERIFY_RUNS);
   body.set("evmversion", "default");
   body.set("constructorArguements", args.constructorArgsHex); // Etherscan typo preserved
   body.set("licenseType", "3"); // MIT
@@ -111,13 +115,42 @@ export async function submitVerifyMissionRecord(args: {
     return { state: "failed", message: `verify submit bad response: ${text.slice(0, 160)}` };
   }
   if (json.status !== "1" || !json.result) {
-    // Etherscan returns status "0" with the message in `result` for duplicates.
     if (/already verified/i.test(json.result ?? "") || /already verified/i.test(json.message ?? "")) {
       return { state: "verified", guid: "preverified", message: json.result ?? "" };
     }
     return { state: "failed", message: json.result ?? json.message ?? "verify submit failed" };
   }
   return { state: "submitted", guid: json.result };
+}
+
+export async function submitVerifyMissionRecord(args: {
+  chainId: number;
+  address: string;
+  constructorArgsHex: string;
+}): Promise<VerifyStatus> {
+  const sourceCode = readLocalSource("src/UmbrellaAgentMissionRecord.sol");
+  return postVerifySourceCodeSingleFile({
+    chainId: args.chainId,
+    address: args.address,
+    sourceCode,
+    contractName: "UmbrellaAgentMissionRecord",
+    constructorArgsHex: args.constructorArgsHex,
+  });
+}
+
+export async function submitVerifyBondingCurve(args: {
+  chainId: number;
+  address: string;
+  constructorArgsHex: string;
+}): Promise<VerifyStatus> {
+  const sourceCode = readLocalSource("verify/UmbrellaBondingCurve.flattened.sol");
+  return postVerifySourceCodeSingleFile({
+    chainId: args.chainId,
+    address: args.address,
+    sourceCode,
+    contractName: "UmbrellaBondingCurve",
+    constructorArgsHex: args.constructorArgsHex,
+  });
 }
 
 export async function pollVerifyStatus(args: {

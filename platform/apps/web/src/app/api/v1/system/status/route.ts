@@ -74,6 +74,23 @@ export async function GET(req: Request) {
   );
 }
 
+function redactRpcUrl(url: string | undefined | null): string | null {
+  const v = (url ?? "").trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      const last = parts[parts.length - 1]!;
+      if (last.length > 6) parts[parts.length - 1] = `${last.slice(0, 4)}…${last.slice(-2)}`;
+      u.pathname = `/${parts.join("/")}`;
+    }
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
 async function readDeployerDiag(): Promise<{
   configured: boolean;
   address: string | null;
@@ -81,10 +98,19 @@ async function readDeployerDiag(): Promise<{
   balanceEth: string | null;
   lowBalance: boolean;
   basescanKeyConfigured: boolean;
+  rpcUrl: string | null;
+  rpcCandidates: string[];
+  primaryRpcLooksLikePlaceholder: boolean;
   error: string | null;
 }> {
   const key = process.env.UMBRELLA_DEPLOYER_PRIVATE_KEY?.trim();
   const basescanKeyConfigured = Boolean(process.env.BASESCAN_API_KEY?.trim());
+  const rawPrimary = process.env.BASE_SEPOLIA_RPC_URL?.trim() ?? "";
+  const primaryRpcLooksLikePlaceholder =
+    rawPrimary.length > 0 &&
+    (/[<>]/.test(rawPrimary) ||
+      /%3c|%3e/i.test(rawPrimary) ||
+      /your[-_](?:alchemy[-_])?(?:api[-_])?key/i.test(rawPrimary));
   if (!key) {
     return {
       configured: false,
@@ -93,6 +119,9 @@ async function readDeployerDiag(): Promise<{
       balanceEth: null,
       lowBalance: false,
       basescanKeyConfigured,
+      rpcUrl: null,
+      rpcCandidates: [],
+      primaryRpcLooksLikePlaceholder,
       error: null,
     };
   }
@@ -112,6 +141,9 @@ async function readDeployerDiag(): Promise<{
       balanceEth,
       lowBalance,
       basescanKeyConfigured,
+      rpcUrl: redactRpcUrl(cfg.rpcUrl),
+      rpcCandidates: cfg.rpcCandidates.map((u) => redactRpcUrl(u) ?? ""),
+      primaryRpcLooksLikePlaceholder,
       error: null,
     };
   } catch (err) {
@@ -122,6 +154,9 @@ async function readDeployerDiag(): Promise<{
       balanceEth: null,
       lowBalance: false,
       basescanKeyConfigured,
+      rpcUrl: null,
+      rpcCandidates: [],
+      primaryRpcLooksLikePlaceholder,
       error: err instanceof Error ? err.message : "deployer diag failed",
     };
   }

@@ -15,6 +15,7 @@ type HookSnapshot = {
   id: string;
   curve_stage: string;
   verified_at: string | null;
+  curve_verified_at: string | null;
   deploy_error: string | null;
   token_address: string | null;
   curve_address: string | null;
@@ -38,7 +39,12 @@ const STEP_LABELS: Array<{ id: string; label: string; detail: string }> = [
   { id: "deploy_mission_record", label: "Mission record on-chain", detail: "Deploying immutable record" },
   { id: "create_curve", label: "Bonding curve live", detail: "Seeding token supply into the curve" },
   { id: "mark_active", label: "Agent tradeable", detail: "Marketplace listing activated" },
-  { id: "verify_basescan", label: "Basescan verified", detail: "Async — keeps running after launch" },
+  { id: "verify_basescan", label: "Basescan: mission", detail: "Source verified on the explorer" },
+  {
+    id: "verify_curve_basescan",
+    label: "Basescan: curve",
+    detail: "Bonding curve contract verification",
+  },
 ];
 
 type Props = {
@@ -90,6 +96,10 @@ export function LaunchStatusPanel({ hookId, onClose }: Props) {
       if (row.error) message = row.error;
     }
     if (s.id === "verify_basescan" && hook?.verified_at) {
+      status = "completed";
+      message = "verified";
+    }
+    if (s.id === "verify_curve_basescan" && hook?.curve_verified_at) {
       status = "completed";
       message = "verified";
     }

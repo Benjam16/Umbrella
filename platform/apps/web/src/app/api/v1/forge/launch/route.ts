@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { parseEther, type Address, type Hex } from "viem";
 
 import { runLaunch } from "@/lib/launch/orchestrator";
 import { defaultLaunchChainId } from "@/lib/launch/chain-config";
-import type { Address, Hex } from "viem";
 
 export const runtime = "nodejs";
 
@@ -21,6 +21,7 @@ export const runtime = "nodejs";
  *   B. Runs Kimi to generate the mission Solidity (with template fallback)
  *   C. Deploys an UmbrellaAgentMissionRecord pinning the Kimi hash on-chain
  *   D. Calls curveFactory.createCurveWithPermit to spin up the bonding curve
+ *      (optional `initialBuyEth` is forwarded as `value` for creator snipe)
  *   E. Fires a Basescan verify in the background
  *
  * Returns once step (D) has confirmed so the client has a fully-tradable curve
@@ -32,10 +33,14 @@ type LaunchBody = {
   walletAddress?: string;
   factoryTxHash?: string;
   chainId?: number;
+  /** "agent" (full stack + attestation) or "token" (sovereign, minimal). */
+  launchType?: string;
   identity?: { name?: string; symbol?: string; imageUrl?: string };
   mission?: { prompt?: string; category?: string };
   permit?: { deadline?: string | number; v?: number; r?: string; s?: string };
   forkedFrom?: string;
+  /** Decimal ETH (e.g. "0.05") for first bonding-curve buy to creator; relay wallet pays. */
+  initialBuyEth?: string;
 };
 
 function bad(message: string, status = 400) {
@@ -67,9 +72,15 @@ export async function POST(request: Request) {
   const imageUrl = sanitize(body.identity?.imageUrl, 512).trim();
   const prompt = sanitize(body.mission?.prompt, 2_000).trim();
   const category = sanitize(body.mission?.category, 32).trim() || "execution";
+  const launchType = sanitize(body.launchType, 16).trim().toLowerCase() || "agent";
+  const isToken = launchType === "token";
   if (name.length < 2) return bad("identity.name too short");
   if (symbol.length < 2) return bad("identity.symbol too short");
-  if (prompt.length < 12) return bad("mission.prompt too short");
+  if (isToken) {
+    if (prompt.length < 4) return bad("mission.prompt too short for token mode (min 4 chars)");
+  } else if (prompt.length < 12) {
+    return bad("mission.prompt too short");
+  }
 
   const permit = body.permit;
   if (
@@ -88,17 +99,43 @@ export async function POST(request: Request) {
   const forkedFromRaw = sanitize(body.forkedFrom, 40).trim();
   const forkedFrom = /^[0-9a-fA-F-]{32,40}$/.test(forkedFromRaw) ? forkedFromRaw : null;
 
-  const composedPrompt = [
-    `Agent: ${name} (${symbol})`,
-    `Category: ${category}`,
-    imageUrl ? `Branding: ${imageUrl}` : null,
-    `Mission: ${prompt}`,
-    "",
-    "Write a production-ready Uniswap v4 Solidity hook that implements the",
-    "behavior described above. Return only Solidity source code.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  let initialBuyWei = 0n;
+  const buyEthRaw = sanitize(body.initialBuyEth, 32).trim();
+  if (buyEthRaw) {
+    try {
+      initialBuyWei = parseEther(buyEthRaw as `${number}`);
+    } catch {
+      return bad("initialBuyEth must be a decimal ETH amount, e.g. 0.01");
+    }
+    if (initialBuyWei <= 0n) {
+      return bad("initialBuyEth must be greater than zero when set");
+    }
+  }
+
+  const composedPrompt = isToken
+    ? [
+        `Sovereign token: ${name} (${symbol})`,
+        `Category: ${category}`,
+        imageUrl ? `Branding: ${imageUrl}` : null,
+        `Creator note: ${prompt}`,
+        "",
+        "This is a standard Umbrella token launch without the full agentic workforce: no mission workforce routing.",
+        "Write a production-ready Uniswap v4 Solidity hook suitable for a fixed-supply community token: lean, auditable, and focused on simple fee/liquidity story.",
+        "Return only Solidity source code.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : [
+        `Agent: ${name} (${symbol})`,
+        `Category: ${category}`,
+        imageUrl ? `Branding: ${imageUrl}` : null,
+        `Mission: ${prompt}`,
+        "",
+        "Apply Gunnr-style performance enforcement: the hook should plausibly reflect on-chain / attested success metrics (successRate) where the blueprint implies labor-backed economics.",
+        "Write a production-ready Uniswap v4 Solidity hook that implements the behavior described. Return only Solidity source code.",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   try {
     const result = await runLaunch({
@@ -113,6 +150,7 @@ export async function POST(request: Request) {
         r: permit.r as Hex,
         s: permit.s as Hex,
       },
+      initialBuyWei: initialBuyWei > 0n ? initialBuyWei : undefined,
       forkedFrom,
       prompt: composedPrompt,
     });

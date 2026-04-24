@@ -31,7 +31,7 @@ export async function GET(
   const { data, error } = await supabase
     .from("generated_hooks")
     .select(
-      "id, wallet_address, chain_id, token_address, curve_address, hook_address, pool_address, curve_stage, verify_guid, verified_at, deploy_error, created_at",
+      "id, wallet_address, chain_id, token_address, curve_address, hook_address, pool_address, curve_stage, verify_guid, verified_at, curve_verified_at, deploy_error, created_at",
     )
     .eq("id", hookId)
     .single();

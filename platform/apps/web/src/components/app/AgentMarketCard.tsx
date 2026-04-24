@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -12,6 +13,8 @@ import {
   timeAgo,
   type AgentListing,
 } from "@/lib/marketplace";
+import { getAgentImageUrl } from "@/lib/supabase-client";
+import { SovereignProofBadge } from "@/components/app/SovereignProofBadge";
 
 type Props = {
   listing: AgentListing;
@@ -86,14 +89,34 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
       <div className="flex flex-col gap-3 p-4">
         {/* --- header --- */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
+          <div className="flex min-w-0 gap-3">
+            {listing.imageUrl ? (
+              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+                <Image
+                  src={getAgentImageUrl(listing.imageUrl)}
+                  alt={listing.name}
+                  width={48}
+                  height={48}
+                  className="h-12 w-12 object-cover"
+                  unoptimized
+                />
+              </div>
+            ) : null}
+            <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="truncate text-[15px] font-semibold text-zinc-100">
                 {listing.name}
               </span>
               <span className="font-mono text-[11px] text-zinc-500">
                 ${listing.symbol}
               </span>
+              <SovereignProofBadge
+                chainId={listing.curve?.chainId ?? 8453}
+                missionVerifiedAt={listing.curve?.missionVerifiedAt}
+                curveVerifiedAt={listing.curve?.curveVerifiedAt}
+                missionContractAddress={listing.pool.hookAddress}
+                curveContractAddress={listing.curve?.address ?? null}
+              />
               {isElite && (
                 <span className="rounded-full bg-signal-green/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal-green">
                   elite · {Math.round(listing.performance.successRate * 100)}%
@@ -119,6 +142,7 @@ export function AgentMarketCard({ listing, onLaunch }: Props) {
                 </span>
               )}
             </p>
+            </div>
           </div>
 
           <div className="flex shrink-0 flex-col items-end">

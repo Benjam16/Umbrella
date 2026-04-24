@@ -6,9 +6,11 @@ import {
   deployMissionRecord,
   verifyFactoryTx,
   encodeMissionRecordConstructorArgs,
+  encodeBondingCurveConstructorArgsFromChain,
   LaunchDeployerError,
 } from "./deployer";
-import { pollVerifyStatus, submitVerifyMissionRecord } from "./basescan";
+import { pollVerifyStatus, submitVerifyBondingCurve, submitVerifyMissionRecord } from "./basescan";
+import type { VerifyStatus } from "./basescan";
 import { recordLaunchStep, updateHookRow } from "./jobs";
 
 /**
@@ -22,7 +24,8 @@ import { recordLaunchStep, updateHookRow } from "./jobs";
  *   3. deploy_mission_record — server deploys the per-agent record contract
  *   4. create_curve         — server relays ERC-2612 permit to curve factory
  *   5. mark_active          — flip curve_stage='active' on generated_hooks row
- *   6. verify_basescan      — fire-and-forget Basescan verification
+ *   6. verify_basescan / verify_curve_basescan — fire-and-forget Basescan verification
+ *      (mission record + bonding curve; both async after HTTP returns)
  */
 
 export type OrchestratorInput = {
@@ -37,6 +40,8 @@ export type OrchestratorInput = {
     r: Hex;
     s: Hex;
   };
+  /** ETH (wei) for optional first buy to creator at curve deploy; deployer wallet must fund. */
+  initialBuyWei?: bigint;
   forkedFrom?: string | null;
   prompt: string;
 };
@@ -116,6 +121,7 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
     tokenAddress,
     poolAddress: null,
     hookAddress: null,
+    imageUrl: input.identity.imageUrl || null,
   });
 
   await updateHookRow(hookRow.id, {
@@ -181,6 +187,7 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
       creator: input.walletAddress,
       hookAddress: missionRecord.address,
       tokensSeed: factory.initialSupply,
+      initialBuyWei: input.initialBuyWei,
       permit: {
         deadline: BigInt(input.permit.deadline),
         v: input.permit.v,
@@ -228,18 +235,43 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
     status: "completed",
   });
 
-  // Step 6 — Basescan verify, fire-and-forget.
-  void verifyBasescanInBackground({
+  // Step 6 — Basescan verify (mission + curve), fire-and-forget in parallel.
+  void runBasescanVerifyJob({
     hookId: hookRow.id,
     chainId: input.chainId,
-    address: missionRecord.address,
-    constructorArgsHex: encodeMissionRecordConstructorArgs({
-      creator: input.walletAddress,
-      token: tokenAddress,
-      missionCodeHash: missionRecord.missionCodeHash,
-      metadataURI: `supabase://generated_hooks/${hookRow.id}`,
-      missionLabel: `${input.identity.name} · ${input.identity.symbol}`,
-    }),
+    step: "verify_basescan",
+    submit: async () =>
+      submitVerifyMissionRecord({
+        chainId: input.chainId,
+        address: missionRecord.address,
+        constructorArgsHex: encodeMissionRecordConstructorArgs({
+          creator: input.walletAddress,
+          token: tokenAddress,
+          missionCodeHash: missionRecord.missionCodeHash,
+          metadataURI: `supabase://generated_hooks/${hookRow.id}`,
+          missionLabel: `${input.identity.name} · ${input.identity.symbol}`,
+        }),
+      }),
+    onPollSubmitted: (guid) => updateHookRow(hookRow.id, { verify_guid: guid }),
+    onVerified: () => updateHookRow(hookRow.id, { verified_at: new Date().toISOString() }),
+  });
+  void runBasescanVerifyJob({
+    hookId: hookRow.id,
+    chainId: input.chainId,
+    step: "verify_curve_basescan",
+    submit: async () => {
+      const constructorArgsHex = await encodeBondingCurveConstructorArgsFromChain({
+        chainId: input.chainId,
+        curveAddress: curve.curveAddress,
+      });
+      return submitVerifyBondingCurve({
+        chainId: input.chainId,
+        address: curve.curveAddress,
+        constructorArgsHex,
+      });
+    },
+    onPollSubmitted: async () => {},
+    onVerified: () => updateHookRow(hookRow.id, { curve_verified_at: new Date().toISOString() }),
   });
 
   return {
@@ -250,27 +282,26 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
   };
 }
 
-async function verifyBasescanInBackground(args: {
+async function runBasescanVerifyJob(args: {
   hookId: string;
   chainId: number;
-  address: string;
-  constructorArgsHex: string;
+  step: "verify_basescan" | "verify_curve_basescan";
+  submit: () => Promise<VerifyStatus>;
+  onPollSubmitted: (guid: string) => void | Promise<void>;
+  onVerified: () => void | Promise<void>;
 }) {
+  const { step } = args;
   try {
     await recordLaunchStep({
       hookId: args.hookId,
-      step: "verify_basescan",
+      step,
       status: "running",
     });
-    const submit = await submitVerifyMissionRecord({
-      chainId: args.chainId,
-      address: args.address,
-      constructorArgsHex: args.constructorArgsHex,
-    });
+    const submit = await args.submit();
     if (submit.state === "skipped") {
       await recordLaunchStep({
         hookId: args.hookId,
-        step: "verify_basescan",
+        step,
         status: "completed",
         payload: { skipped: submit.reason },
       });
@@ -279,32 +310,32 @@ async function verifyBasescanInBackground(args: {
     if (submit.state === "failed") {
       await recordLaunchStep({
         hookId: args.hookId,
-        step: "verify_basescan",
+        step,
         status: "failed",
         error: submit.message,
       });
       return;
     }
     if (submit.state === "verified") {
-      await updateHookRow(args.hookId, { verified_at: new Date().toISOString() });
+      await args.onVerified();
       await recordLaunchStep({
         hookId: args.hookId,
-        step: "verify_basescan",
+        step,
         status: "completed",
         payload: { preverified: true },
       });
       return;
     }
 
-    await updateHookRow(args.hookId, { verify_guid: submit.guid });
+    await args.onPollSubmitted(submit.guid);
     for (let i = 0; i < 12; i++) {
       await new Promise((r) => setTimeout(r, 10_000));
       const status = await pollVerifyStatus({ chainId: args.chainId, guid: submit.guid });
       if (status.state === "verified") {
-        await updateHookRow(args.hookId, { verified_at: new Date().toISOString() });
+        await args.onVerified();
         await recordLaunchStep({
           hookId: args.hookId,
-          step: "verify_basescan",
+          step,
           status: "completed",
           payload: { guid: submit.guid, message: status.message },
         });
@@ -313,7 +344,7 @@ async function verifyBasescanInBackground(args: {
       if (status.state === "failed") {
         await recordLaunchStep({
           hookId: args.hookId,
-          step: "verify_basescan",
+          step,
           status: "failed",
           error: status.message,
         });
@@ -322,14 +353,14 @@ async function verifyBasescanInBackground(args: {
     }
     await recordLaunchStep({
       hookId: args.hookId,
-      step: "verify_basescan",
+      step,
       status: "failed",
       error: "timed out waiting for Basescan verification",
     });
   } catch (err) {
     await recordLaunchStep({
       hookId: args.hookId,
-      step: "verify_basescan",
+      step,
       status: "failed",
       error: errorMessage(err),
     });
