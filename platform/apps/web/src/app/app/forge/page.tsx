@@ -129,7 +129,7 @@ function ForgeView() {
   }, [normalizedWallet]);
 
   async function handleSubmit(result: WizardResult) {
-    const txHash = await requestForgePayment(result.walletAddress, {
+    const payment = await requestForgePayment(result.walletAddress, {
       connectedWallet,
       isConnected,
     });
@@ -157,7 +157,8 @@ function ForgeView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...result,
-          txHash,
+          txHash: payment.txHash,
+          chainId: payment.chainId,
           // If the wizard was seeded via Marketplace → "Fork this agent",
           // persist the parent id so the original creator gets fork credit.
           forkedFrom: template?.id ?? null,
@@ -293,7 +294,7 @@ function ForgeView() {
 async function requestForgePayment(
   walletAddress: string,
   ctx: { connectedWallet?: string; isConnected: boolean },
-): Promise<string> {
+): Promise<{ txHash: string; chainId: number }> {
   if (!ctx.isConnected || !ctx.connectedWallet) {
     throw new Error("Connect wallet before forging.");
   }
@@ -303,17 +304,45 @@ async function requestForgePayment(
 
   const quoteRes = await fetch("/api/v1/forge/payment/quote", { cache: "no-store" });
   const quote = (await quoteRes.json().catch(() => ({}))) as {
+    chainId?: number;
     treasuryAddress?: string;
+    minPaymentWei?: string;
     minPaymentHex?: string;
     error?: string;
   };
-  if (!quoteRes.ok || !quote.treasuryAddress || !quote.minPaymentHex) {
+  if (
+    !quoteRes.ok ||
+    !quote.treasuryAddress ||
+    !quote.minPaymentHex ||
+    !quote.minPaymentWei ||
+    !Number.isInteger(quote.chainId)
+  ) {
     throw new Error(quote.error || "forge payment config unavailable");
   }
 
   const eth = (window as unknown as { ethereum?: { request: (args: unknown) => Promise<unknown> } })
     .ethereum;
   if (!eth?.request) throw new Error("No injected wallet provider found.");
+
+  const walletChainHex = (await eth.request({ method: "eth_chainId" })) as string;
+  const walletChainId = Number.parseInt(walletChainHex, 16);
+  if (walletChainId !== quote.chainId) {
+    throw new Error(
+      `Wrong network. Switch to chain ${quote.chainId} before forging.`,
+    );
+  }
+
+  const balanceHex = (await eth.request({
+    method: "eth_getBalance",
+    params: [walletAddress, "latest"],
+  })) as string;
+  const balanceWei = BigInt(balanceHex);
+  const requiredWei = BigInt(quote.minPaymentWei);
+  if (balanceWei < requiredWei) {
+    throw new Error(
+      `Insufficient balance for forge fee. Required ${formatEth(requiredWei)} ETH, available ${formatEth(balanceWei)} ETH.`,
+    );
+  }
 
   const txHash = (await eth.request({
     method: "eth_sendTransaction",
@@ -322,6 +351,7 @@ async function requestForgePayment(
         from: walletAddress,
         to: quote.treasuryAddress,
         value: quote.minPaymentHex,
+        chainId: `0x${quote.chainId.toString(16)}`,
       },
     ],
   })) as string;
@@ -331,7 +361,7 @@ async function requestForgePayment(
   }
 
   await waitForReceipt(eth, txHash);
-  return txHash;
+  return { txHash, chainId: quote.chainId };
 }
 
 async function waitForReceipt(
@@ -349,4 +379,10 @@ async function waitForReceipt(
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   throw new Error("payment confirmation timeout. Please retry forge in a moment.");
+}
+
+function formatEth(wei: bigint): string {
+  const whole = wei / 10n ** 18n;
+  const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0");
+  return `${whole}.${frac}`;
 }

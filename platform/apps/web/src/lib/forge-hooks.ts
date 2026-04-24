@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
 import { createPublicClient, http, parseEther, type Address, type Hex } from "viem";
-import { base } from "viem/chains";
+import { base, baseSepolia } from "viem/chains";
 import { getServerSupabase } from "@umbrella/runner/supabase";
 
 export type GeneratedHookRow = {
@@ -83,17 +83,39 @@ function extractTxHash(payload: unknown): Hex | null {
   return null;
 }
 
-export async function verifyPaymentFromWebhook(payload: unknown): Promise<PaymentVerification> {
+export async function verifyPaymentFromWebhook(
+  payload: unknown,
+  opts?: { chainId?: number },
+): Promise<PaymentVerification> {
   const txHash = extractTxHash(payload);
   if (!txHash) throw new Error("webhook payload missing tx hash");
 
-  const rpcUrl = requiredEnv("BASE_RPC_URL");
-  const treasury = requiredEnv("TREASURY_ADDRESS").toLowerCase();
+  const chainId = opts?.chainId ?? 8453;
+  const isSepolia = chainId === 84532;
+  if (!isSepolia && chainId !== 8453) {
+    throw new Error(`unsupported forge chain ${chainId}`);
+  }
+  const chain = isSepolia ? baseSepolia : base;
+  const rpcUrl = isSepolia
+    ? process.env.BASE_SEPOLIA_RPC_URL?.trim() || process.env.BASE_RPC_URL?.trim()
+    : process.env.BASE_RPC_URL?.trim();
+  if (!rpcUrl) {
+    throw new Error(isSepolia ? "BASE_SEPOLIA_RPC_URL is required" : "BASE_RPC_URL is required");
+  }
+  const treasury = (
+    (isSepolia ? process.env.TREASURY_ADDRESS_SEPOLIA : undefined) ??
+    process.env.TREASURY_ADDRESS
+  )?.toLowerCase();
+  if (!treasury) throw new Error("TREASURY_ADDRESS is required");
   const minWei = BigInt(
-    process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI?.trim() ?? parseEther("0.0011").toString(),
+    (
+      (isSepolia ? process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI_SEPOLIA : undefined) ??
+      process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI ??
+      parseEther("0.0011").toString()
+    ).trim(),
   );
 
-  const client = createPublicClient({ chain: base, transport: http(rpcUrl) });
+  const client = createPublicClient({ chain, transport: http(rpcUrl) });
   const tx = await client.getTransaction({ hash: txHash });
   const receipt = await client.getTransactionReceipt({ hash: txHash });
   if (receipt.status !== "success") throw new Error("payment transaction reverted");

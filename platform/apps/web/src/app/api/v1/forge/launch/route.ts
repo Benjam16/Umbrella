@@ -19,6 +19,7 @@ type LaunchBody = {
   };
   walletAddress?: string;
   txHash?: string;
+  chainId?: number;
   /** Hook id this launch was forked from (via Marketplace "Fork"). */
   forkedFrom?: string;
 };
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
   const prompt = sanitize(body.mission?.prompt, 2_000).trim();
   const category = sanitize(body.mission?.category, 32).trim() || "execution";
   const txHash = sanitize(body.txHash, 80).trim();
+  const chainId = Number.isInteger(body.chainId) ? Number(body.chainId) : 8453;
   const forkedFromRaw = sanitize(body.forkedFrom, 40).trim();
   const forkedFrom = /^[0-9a-fA-F-]{32,40}$/.test(forkedFromRaw)
     ? forkedFromRaw
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
     .join("\n");
 
   try {
-    const payment = await verifyPaymentFromWebhook({ txHash });
+    const payment = await verifyPaymentFromWebhook({ txHash }, { chainId });
     if (payment.from.toLowerCase() !== wallet.toLowerCase()) {
       return badRequest("payment tx sender must match walletAddress");
     }
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
     const row = await insertGeneratedHook({
       walletAddress: wallet,
       txHash,
+      chainId,
       prompt: composed,
       solidityCode: code,
       model,

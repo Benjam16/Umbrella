@@ -5,7 +5,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const treasury = process.env.TREASURY_ADDRESS?.trim() ?? "";
+  const chainIdRaw = process.env.UMBRELLA_FORGE_CHAIN_ID?.trim() ?? "84532";
+  const chainId = Number(chainIdRaw);
+  const isSepolia = chainId === 84532;
+  if (chainId !== 8453 && chainId !== 84532) {
+    return NextResponse.json({ error: "invalid UMBRELLA_FORGE_CHAIN_ID" }, { status: 500 });
+  }
+
+  const treasury =
+    (isSepolia ? process.env.TREASURY_ADDRESS_SEPOLIA : undefined) ??
+    process.env.TREASURY_ADDRESS ??
+    "";
   if (!/^0x[a-fA-F0-9]{40}$/.test(treasury)) {
     return NextResponse.json(
       { error: "TREASURY_ADDRESS is not configured" },
@@ -14,10 +24,15 @@ export async function GET() {
   }
 
   const minWei = BigInt(
-    process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI?.trim() ?? parseEther("0.0011").toString(),
+    (
+      (isSepolia ? process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI_SEPOLIA : undefined) ??
+      process.env.UMBRELLA_FORGE_MIN_PAYMENT_WEI ??
+      parseEther("0.0011").toString()
+    ).trim(),
   );
 
   return NextResponse.json({
+    chainId,
     treasuryAddress: treasury.toLowerCase(),
     minPaymentWei: minWei.toString(),
     minPaymentHex: `0x${minWei.toString(16)}`,
