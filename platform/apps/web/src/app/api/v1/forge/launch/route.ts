@@ -54,7 +54,8 @@ export async function POST(request: Request) {
   const prompt = sanitize(body.mission?.prompt, 2_000).trim();
   const category = sanitize(body.mission?.category, 32).trim() || "execution";
   const txHash = sanitize(body.txHash, 80).trim();
-  const chainId = Number.isInteger(body.chainId) ? Number(body.chainId) : 8453;
+  const defaultForgeChainId = Number(process.env.UMBRELLA_FORGE_CHAIN_ID?.trim() ?? "84532");
+  const chainId = Number.isInteger(body.chainId) ? Number(body.chainId) : defaultForgeChainId;
   const forkedFromRaw = sanitize(body.forkedFrom, 40).trim();
   const forkedFrom = /^[0-9a-fA-F-]{32,40}$/.test(forkedFromRaw)
     ? forkedFromRaw

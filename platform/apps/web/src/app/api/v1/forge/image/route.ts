@@ -38,6 +38,16 @@ async function ensureBucket(
  * on the generated hook row.
  */
 export async function POST(request: Request) {
+  const hasServiceRole = Boolean(
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE?.trim(),
+  );
+  if (!hasServiceRole) {
+    return NextResponse.json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY is required for image uploads" },
+      { status: 503 },
+    );
+  }
+
   const supabase = getServerSupabase();
   if (!supabase) {
     return NextResponse.json(

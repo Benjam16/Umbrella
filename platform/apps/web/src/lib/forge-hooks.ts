@@ -28,12 +28,6 @@ type PaymentVerification = {
   value: bigint;
 };
 
-function requiredEnv(name: string): string {
-  const v = process.env[name]?.trim();
-  if (!v) throw new Error(`${name} is required`);
-  return v;
-}
-
 function webhookSigningKey(): string | null {
   return process.env.ALCHEMY_WEBHOOK_SIGNING_KEY?.trim() || null;
 }
@@ -90,7 +84,8 @@ export async function verifyPaymentFromWebhook(
   const txHash = extractTxHash(payload);
   if (!txHash) throw new Error("webhook payload missing tx hash");
 
-  const chainId = opts?.chainId ?? 8453;
+  const defaultForgeChainId = Number(process.env.UMBRELLA_FORGE_CHAIN_ID?.trim() ?? "84532");
+  const chainId = opts?.chainId ?? defaultForgeChainId;
   const isSepolia = chainId === 84532;
   if (!isSepolia && chainId !== 8453) {
     throw new Error(`unsupported forge chain ${chainId}`);
