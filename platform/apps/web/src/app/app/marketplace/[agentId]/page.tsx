@@ -14,7 +14,7 @@ import {
   type AgentListing,
 } from "@/lib/marketplace";
 import { ExternalLinkIcon } from "@/components/icons/ExternalLinkIcon";
-import { addressExplorerUrl } from "@/lib/chains/explorer";
+import { addressExplorerUrl, contractCodeExplorerUrl } from "@/lib/chains/explorer";
 import { getAgentImageUrl } from "@/lib/supabase-client";
 
 /**
@@ -36,7 +36,7 @@ export default function AgentProfilePage() {
   >([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveDelta, setLiveDelta] = useState<number | null>(null);
-  const [liveState, setLiveState] = useState<"live" | "warmup" | "synthetic" | null>(null);
+  const [liveState, setLiveState] = useState<"live" | "warmup" | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const [liveCurve, setLiveCurve] = useState<{
     address: string | null;
@@ -87,7 +87,7 @@ export default function AgentProfilePage() {
         );
         if (!res.ok) return;
         const data = (await res.json()) as {
-          state?: "live" | "warmup" | "synthetic";
+          state?: "live" | "warmup";
           message?: string;
           live?: { priceUsd?: number; delta?: number };
           spark?: Array<{ t: number; price: number }>;
@@ -129,6 +129,7 @@ export default function AgentProfilePage() {
   const shownDelta = liveDelta ?? listing.price.change24h;
   const isPositive = shownDelta >= 0;
   const shownTape = tradeTape.length > 0 ? tradeTape : [];
+  const curveAddress = liveCurve?.address ?? listing.curve?.address ?? null;
 
   return (
     <>
@@ -235,7 +236,7 @@ export default function AgentProfilePage() {
           {liveCurve && liveCurve.stage !== "graduated" && (
             <section className="mt-6 rounded-2xl border border-signal-blue/30 bg-signal-blue/[0.03] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-signal-blue">
-                <span>Pump curve · graduates to Uniswap v4</span>
+                <span>Bonding curve · graduation powered by Umbrella liquidity</span>
                 <span className="text-zinc-300">{liveCurve.progress.toFixed(1)}%</span>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800">
@@ -368,17 +369,21 @@ export default function AgentProfilePage() {
                   On-chain
                 </h3>
                 <AddressExplorerRow
-                  label="Token"
+                  label="Token contract"
                   chainId={explorerChainId}
                   address={listing.token.address}
                 />
-                <Row label="Pool id">
-                  <span>{listing.pool.id.slice(0, 14)}…</span>
-                </Row>
                 <AddressExplorerRow
-                  label="Hook"
+                  label="Bonding curve"
+                  chainId={explorerChainId}
+                  address={curveAddress}
+                  verified={Boolean(listing.curve?.curveVerifiedAt)}
+                />
+                <AddressExplorerRow
+                  label="Mission logic"
                   chainId={explorerChainId}
                   address={listing.pool.hookAddress}
+                  verified={Boolean(listing.curve?.missionVerifiedAt)}
                 />
                 <Row label="Chain">base</Row>
               </div>
@@ -460,10 +465,12 @@ function AddressExplorerRow({
   label,
   chainId,
   address,
+  verified,
 }: {
   label: string;
   chainId: number;
-  address: string;
+  address: string | null | undefined;
+  verified?: boolean;
 }) {
   const a = (address ?? "").trim();
   if (!a || a.toLowerCase() === ZERO_ADDR || !/^0x[a-fA-F0-9]{40}$/i.test(a)) {
@@ -477,17 +484,24 @@ function AddressExplorerRow({
   return (
     <div className="flex items-center justify-between gap-2 py-1">
       <span className="shrink-0 text-zinc-500">{label}</span>
-      <a
-        href={addressExplorerUrl(chainId, a)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-w-0 max-w-[min(100%,14rem)] items-center justify-end gap-1 font-mono text-signal-blue hover:underline"
-      >
-        <span className="truncate">
-          {a.slice(0, 8)}…{a.slice(-4)}
-        </span>
-        <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0" />
-      </a>
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        {verified && (
+          <span className="shrink-0 rounded-full border border-signal-green/40 bg-signal-green/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal-green">
+            Verified source
+          </span>
+        )}
+        <a
+          href={verified ? contractCodeExplorerUrl(chainId, a) : addressExplorerUrl(chainId, a)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-w-0 max-w-[min(100%,14rem)] items-center justify-end gap-1 font-mono text-signal-blue hover:underline"
+        >
+          <span className="truncate">
+            {a.slice(0, 8)}…{a.slice(-4)}
+          </span>
+          <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0" />
+        </a>
+      </div>
     </div>
   );
 }

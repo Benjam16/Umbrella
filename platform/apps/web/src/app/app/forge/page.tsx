@@ -267,7 +267,7 @@ function ForgeView() {
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
               Your wallet deploys the token, Umbrella deploys the mission record + bonding curve
               with one permit signature, and trading opens immediately on a pump.fun-style curve.
-              When the curve fills, the agent graduates to a Uniswap v4 pool.
+              When the curve fills, the agent graduates into Umbrella-managed liquidity.
             </p>
           </div>
         </section>
@@ -309,8 +309,7 @@ function ForgeView() {
               <div>
                 <h2 className="text-lg font-semibold text-zinc-100">Generated Artifacts</h2>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Live stream via Supabase Realtime. Enter or launch with a wallet to see
-                  artifacts appear here.
+                  Enter or launch with a wallet to see your generated agents appear here.
                 </p>
               </div>
               <div className="flex items-center gap-2">

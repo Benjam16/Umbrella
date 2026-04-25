@@ -38,8 +38,8 @@ type Props = {
  * In-app pump.fun-style swap. While the agent's curve is `active`, the user
  * trades directly against the UmbrellaBondingCurve contract (buy with ETH,
  * sell tokens back to the curve). Once the curve graduates, in-app v4
- * WETH/TOKEN swaps run when `NEXT_PUBLIC_UMBRELLA_V4_SWAP_ROUTER_*` is set
- * (wrap → approve → UmbrellaV4SimpleSwap; sells optionally unwrap to ETH).
+ * WETH/TOKEN swaps run through UmbrellaV4SimpleSwap when configured
+ * (wrap -> approve -> swap; sells optionally unwrap to ETH).
  */
 export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Props) {
   const [side, setSide] = useState<Side>("buy");
@@ -370,7 +370,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
@@ -386,7 +386,7 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
                   {curve?.stage === "graduated"
-                    ? "Uniswap v4 · Umbrella Performance Hook"
+                    ? "Graduated liquidity · Umbrella router"
                     : "Umbrella Bonding Curve"}
                 </div>
                 <div className="mt-1 text-lg font-semibold text-zinc-100">
@@ -503,9 +503,9 @@ export function TradeDrawer({ listing, open, onClose, initialSide = "buy" }: Pro
               {canTradeActive
                 ? "Trades route directly into the UmbrellaBondingCurve contract."
                 : canV4Swap
-                  ? "Graduated: swaps use the default WETH/TOKEN v4 pool (0.3% / tick 60) via UmbrellaV4SimpleSwap. Buys wrap ETH to WETH first."
+                  ? "Graduated: swaps use Umbrella's in-app router. Buys wrap ETH first."
                   : canTradeGraduated
-                    ? "This curve has graduated. Set NEXT_PUBLIC_UMBRELLA_V4_SWAP_ROUTER_SEPOLIA (or _BASE) to enable in-app v4 swaps, or use the explorer links below."
+                    ? "This curve has graduated. In-app graduated swaps are not enabled for this market yet."
                     : "Trading opens automatically when the launch pipeline completes."}
             </p>
             {canTradeGraduated && listing.token?.address && (

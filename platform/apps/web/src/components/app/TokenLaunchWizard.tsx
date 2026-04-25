@@ -123,9 +123,7 @@ export function TokenLaunchWizard({ onSubmit, initial, contextNotice }: Props) {
         walletAddress: wallet.trim(),
       };
       if (onSubmit) await onSubmit(payload);
-      setResult(
-        `Submitted. Watching Supabase for generated artifacts for ${wallet.trim().slice(0, 6)}...`,
-      );
+      setResult(`Submitted. Watching launch progress for ${wallet.trim().slice(0, 6)}...`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "submission failed");
     } finally {
@@ -653,7 +651,7 @@ function StepForge({
         hint={
           walletAutoFilled
             ? "Auto-filled from your connected wallet. Edit to override."
-            : "Used to key generated artifacts via Supabase Realtime"
+            : "Used to attach this launch to your workspace"
         }
       >
         <div className="relative">

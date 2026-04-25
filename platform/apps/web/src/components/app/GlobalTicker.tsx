@@ -15,9 +15,7 @@ type Row = {
 };
 
 /**
- * Global heartbeat: `market_trades` inserts over Supabase Realtime, with a
- * scrolling marquee. Requires `NEXT_PUBLIC_SUPABASE_*` and Realtime on
- * `public.market_trades`.
+ * Global market heartbeat from live trade inserts.
  */
 export function GlobalTicker() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -27,13 +25,11 @@ export function GlobalTicker() {
     if (rows.length === 0) return "";
     return rows
       .map((r) => {
-        const p = r.price_usd != null ? Number(r.price_usd).toFixed(4) : "?";
+        const price = r.price_usd != null ? `$${Number(r.price_usd).toFixed(4)}` : "market";
+        const size = r.size_usd != null ? `$${Number(r.size_usd).toLocaleString()}` : "liquidity";
         const hook = (r.hook_id ?? "").slice(0, 6);
-        const sc =
-          r.source_chain_id != null && r.log_index != null
-            ? ` · L${r.source_chain_id}/${r.log_index}`
-            : "";
-        return `${r.side.toUpperCase()} $${p} · ${hook}…${sc}`;
+        const verb = r.side === "buy" ? "bought" : "sold";
+        return `Someone ${verb} ${size} at ${price} · agent ${hook}…`;
       })
       .join("   ·   ");
   }, [rows]);
@@ -86,11 +82,7 @@ export function GlobalTicker() {
       </span>
       <div className="relative ml-3 min-h-[1.25rem] min-w-0 flex-1 overflow-hidden">
         {!supabaseOk ? (
-          <p className="truncate text-zinc-500">
-            Set <span className="text-zinc-400">NEXT_PUBLIC_SUPABASE_URL</span> and{" "}
-            <span className="text-zinc-400">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> for the market
-            feed.
-          </p>
+          <p className="truncate text-zinc-500">Live trade feed connecting…</p>
         ) : line ? (
           <div className="flex w-max animate-ticker-marquee">
             <span className="whitespace-nowrap pr-16 font-mono text-zinc-300" aria-hidden={false}>
@@ -101,7 +93,7 @@ export function GlobalTicker() {
             </span>
           </div>
         ) : (
-          <p className="truncate text-zinc-500">Listening for trades…</p>
+          <p className="truncate text-zinc-500">Waiting for the next Umbrella trade…</p>
         )}
       </div>
     </div>
