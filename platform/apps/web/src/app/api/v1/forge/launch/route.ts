@@ -5,6 +5,8 @@ import { runLaunch } from "@/lib/launch/orchestrator";
 import { defaultLaunchChainId } from "@/lib/launch/chain-config";
 
 export const runtime = "nodejs";
+/** Forge runs verify + Kimi + two deploy txs; allow long enough on Vercel serverless. */
+export const maxDuration = 300;
 
 /**
  * POST /api/v1/forge/launch

@@ -671,8 +671,10 @@ function StepForge({
 
       <div className="rounded-lg border border-zinc-800 bg-ink-950/60 p-4">
         <p className="text-xs text-zinc-400">
-          Forge will deploy your token, run Kimi{launchType === "agent" ? " with full agent constraints" : " with a minimal sovereign hook"}, and
-          open the bonding curve. Supply is fixed at mint — no additional minting after deployment.
+          Forge deploys your token from your wallet, then the server calls Kimi
+          {launchType === "agent" ? " with full agent constraints" : " with a minimal sovereign hook"} and
+          opens the bonding curve so the token trades inside Umbrella first (not an immediate Uniswap
+          listing). Supply is fixed at mint.
         </p>
       </div>
 
@@ -682,11 +684,15 @@ function StepForge({
 
       {submitting && (
         <div className="rounded-lg border border-signal-blue/40 bg-signal-blue/5 p-3 font-mono text-xs text-signal-blue">
-          <p>[forge] queuing launch for {identity.symbol || "TOKEN"}...</p>
+          <p>[forge] signing factory + permit in your wallet, then server pipeline…</p>
           <p>
             [forge] mode: {launchType} · mission: {mission.category}
           </p>
-          <p>[forge] waiting for on-chain payment + kimi response...</p>
+          <p>
+            [forge] Kimi runs on the server (not in the browser). This usually takes 1–3 minutes:
+            verify token → generate Solidity → deploy mission record → bonding curve → tradeable on
+            Umbrella (Uniswap v4 only after curve graduation).
+          </p>
         </div>
       )}
       {result && (

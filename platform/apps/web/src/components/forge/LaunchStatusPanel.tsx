@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 type HookSnapshot = {
   id: string;
+  model?: string | null;
   curve_stage: string;
   verified_at: string | null;
   curve_verified_at: string | null;
@@ -94,6 +95,9 @@ export function LaunchStatusPanel({ hookId, onClose }: Props) {
     if (row) {
       status = row.status;
       if (row.error) message = row.error;
+    }
+    if (s.id === "generate_hook" && status === "completed" && hook?.model && !message) {
+      message = `Model: ${hook.model}`;
     }
     if (s.id === "verify_basescan" && hook?.verified_at) {
       status = "completed";

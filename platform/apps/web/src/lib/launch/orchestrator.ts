@@ -13,6 +13,16 @@ import { pollVerifyStatus, submitVerifyBondingCurve, submitVerifyMissionRecord }
 import type { VerifyStatus } from "./basescan";
 import { recordLaunchStep, updateHookRow } from "./jobs";
 
+/** Minimal Solidity so `generated_hooks` exists before Kimi; replaced after generation. */
+const FORGE_PRE_KIMI_PLACEHOLDER = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+/** Umbrella Forge placeholder — real Kimi output is written to this row next. */
+contract UmbrellaForgeHookPending {
+    string public constant stage = "pending-kimi";
+}
+`;
+
 /**
  * End-to-end orchestrator for the pump.fun-style launch flow. Runs
  * sequentially and writes progress into `launch_jobs` after every step so the
@@ -77,8 +87,24 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
 
   const tokenAddress = factory.tokenAddress as Address;
 
+  // Create the hook row before Kimi so every `launch_jobs` row shares `hook_id`.
+  // Otherwise listLaunchJobs(hookId) misses verify + generate steps and the UI looks stuck.
+  const hookRow = await insertGeneratedHook({
+    walletAddress: input.walletAddress,
+    txHash: input.factoryTxHash,
+    chainId: input.chainId,
+    prompt: input.prompt,
+    solidityCode: FORGE_PRE_KIMI_PLACEHOLDER,
+    model: "umbrella:pending-kimi",
+    forkedFrom: input.forkedFrom ?? null,
+    tokenAddress,
+    poolAddress: null,
+    hookAddress: null,
+    imageUrl: input.identity.imageUrl || null,
+  });
+
   await recordLaunchStep({
-    hookId: null,
+    hookId: hookRow.id,
     step: "verify_factory_tx",
     status: "completed",
     payload: { tokenAddress, blueprintId: factory.blueprintId },
@@ -86,7 +112,7 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
 
   // Step 2 — Kimi (or template fallback).
   await recordLaunchStep({
-    hookId: null,
+    hookId: hookRow.id,
     step: "generate_hook",
     status: "running",
   });
@@ -95,36 +121,27 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
     kimi = await generateHookWithKimi(input.prompt);
   } catch (err) {
     await recordLaunchStep({
-      hookId: null,
+      hookId: hookRow.id,
       step: "generate_hook",
       status: "failed",
       error: errorMessage(err),
     });
+    await updateHookRow(hookRow.id, {
+      curve_stage: "failed",
+      deploy_error: errorMessage(err),
+    });
     throw err;
   }
   await recordLaunchStep({
-    hookId: null,
+    hookId: hookRow.id,
     step: "generate_hook",
     status: "completed",
     payload: { model: kimi.model },
   });
 
-  // Persist the base hook row now so every subsequent step can link back.
-  const hookRow = await insertGeneratedHook({
-    walletAddress: input.walletAddress,
-    txHash: input.factoryTxHash,
-    chainId: input.chainId,
-    prompt: input.prompt,
-    solidityCode: kimi.code,
-    model: kimi.model,
-    forkedFrom: input.forkedFrom ?? null,
-    tokenAddress,
-    poolAddress: null,
-    hookAddress: null,
-    imageUrl: input.identity.imageUrl || null,
-  });
-
   await updateHookRow(hookRow.id, {
+    solidity_code: kimi.code,
+    model: kimi.model,
     curve_stage: "deploying",
     mission_code_hash: keccak256(toBytes(kimi.code)),
   });

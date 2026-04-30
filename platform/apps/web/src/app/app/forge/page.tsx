@@ -285,9 +285,10 @@ function ForgeView() {
               Launch a sovereign token or full agent
             </h1>
             <p className="mt-3 max-w-3xl text-sm text-zinc-400">
-              Your wallet deploys the token, Umbrella deploys the mission record + bonding curve
-              with one permit signature, and trading opens immediately on a pump.fun-style curve.
-              When the curve fills, the agent graduates into Umbrella-managed liquidity.
+              Your wallet deploys the ERC-20, then the app calls Kimi on the server to draft mission
+              Solidity, deploys a mission record + bonding curve with your permit, and lists the
+              agent for trading on the Umbrella bonding curve (not a Uniswap pool until graduation).
+              When the curve fills, it moves into Umbrella-managed Uniswap v4 liquidity.
             </p>
           </div>
         </section>
