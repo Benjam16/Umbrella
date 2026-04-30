@@ -8,7 +8,8 @@ import {
   useSwitchChain,
   useWalletClient,
 } from "wagmi";
-import { createPublicClient, decodeEventLog, http, type Address, type Hex } from "viem";
+import { base, baseSepolia } from "viem/chains";
+import { createPublicClient, decodeEventLog, http, type Address, type Chain, type Hex } from "viem";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { LaunchStatusPanel } from "@/components/forge/LaunchStatusPanel";
@@ -20,6 +21,7 @@ import {
   newLaunchId,
   upsertPendingLaunch,
 } from "@/lib/recent-launches";
+import { SUPPORTED_CHAIN_IDS } from "@/lib/wallet/config";
 
 type HookRow = {
   id: string;
@@ -155,20 +157,37 @@ function ForgeView() {
       throw new Error("Wallet address must match connected wallet.");
     }
     if (!walletClient) throw new Error("Wallet client not ready. Reconnect and retry.");
+    if (
+      chainId !== undefined &&
+      !(SUPPORTED_CHAIN_IDS as readonly number[]).includes(chainId)
+    ) {
+      throw new Error("Switch your wallet to Base or Base Sepolia before launching.");
+    }
 
     const blueprintId = deriveBlueprintId(result);
     const initialSupply = 1_000_000_000n * 10n ** 18n; // 1B token default supply.
 
+    const preferredChainId =
+      chainId === 8453 || chainId === 84532 ? chainId : undefined;
     const quote = await fetchLaunchQuote({
       walletAddress: result.walletAddress,
       name: result.identity.name,
       symbol: result.identity.symbol,
       blueprint: blueprintId,
       supply: initialSupply.toString(),
+      preferredChainId,
     });
 
     if (chainId !== quote.chainId) {
-      await switchChainAsync({ chainId: quote.chainId });
+      try {
+        await switchChainAsync({ chainId: quote.chainId });
+      } catch (switchErr) {
+        const hint =
+          switchErr instanceof Error ? switchErr.message : "Could not switch network.";
+        throw new Error(
+          `Your wallet must be on ${quote.chainId === 8453 ? "Base" : "Base Sepolia"} (chain ${quote.chainId}) before forging. ${hint}`,
+        );
+      }
     }
 
     const launchId = newLaunchId();
@@ -383,6 +402,8 @@ async function fetchLaunchQuote(args: {
   symbol: string;
   blueprint: string;
   supply: string;
+  /** When set, prepare uses this chain so the quote matches the connected wallet. */
+  preferredChainId?: 8453 | 84532;
 }): Promise<LaunchQuote> {
   const url = new URL("/api/v1/forge/launch/prepare", window.location.origin);
   url.searchParams.set("wallet", args.walletAddress);
@@ -390,6 +411,9 @@ async function fetchLaunchQuote(args: {
   url.searchParams.set("symbol", args.symbol.toUpperCase());
   url.searchParams.set("blueprint", args.blueprint);
   url.searchParams.set("supply", args.supply);
+  if (args.preferredChainId !== undefined) {
+    url.searchParams.set("chainId", String(args.preferredChainId));
+  }
 
   const res = await fetch(url.toString(), { cache: "no-store" });
   if (!res.ok) {
@@ -404,7 +428,7 @@ type AnyWalletClient = {
   chain?: { id: number } | null;
   writeContract: (args: {
     account: Address;
-    chain?: unknown;
+    chain?: Chain;
     address: Address;
     abi: unknown;
     functionName: string;
@@ -412,6 +436,12 @@ type AnyWalletClient = {
     value?: bigint;
   }) => Promise<Hex>;
 };
+
+function launchChainForQuote(chainId: number): Chain {
+  if (chainId === 8453) return base;
+  if (chainId === 84532) return baseSepolia;
+  throw new Error(`unsupported launch chain ${chainId}`);
+}
 
 async function submitFactoryTx(args: {
   walletClient: AnyWalletClient;
@@ -424,9 +454,10 @@ async function submitFactoryTx(args: {
   if (!walletClient.account?.address) {
     throw new Error("Wallet account unavailable. Reconnect and retry.");
   }
+  const launchChain = launchChainForQuote(quote.chainId);
   const txHash = await walletClient.writeContract({
     account: walletClient.account.address,
-    chain: walletClient.chain?.id === quote.chainId ? walletClient.chain : undefined,
+    chain: launchChain,
     address: quote.factoryAddress,
     abi: agentTokenFactoryAbi,
     functionName: "createAgentToken",
