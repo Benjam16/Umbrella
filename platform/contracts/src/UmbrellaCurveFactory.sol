@@ -161,6 +161,10 @@ contract UmbrellaCurveFactory is Ownable2Step {
         return allCurves.length;
     }
 
+    /// @dev Bonding curve `buyTo` refunds unused ETH to `msg.sender` (this factory). Accept it so
+    ///      creator-snipe txs do not revert when `ethGross < msg.value` (rounding / binary search).
+    receive() external payable {}
+
     function predictCurveAddress(address token) external view returns (address) {
         bytes32 salt = keccak256(abi.encodePacked("umbrella.curve.v1:", token));
         bytes memory creationCode = abi.encodePacked(
@@ -230,12 +234,34 @@ contract UmbrellaCurveFactory is Ownable2Step {
     ///      same transaction as `createCurve*`. `msg.value` must be zero in the
     ///      common relayer case (snipe is optional).
     function _initialBuy(address curve, address recipient, uint256 buyEth) internal {
-        uint256 tokensOut = UmbrellaBondingCurve(payable(curve)).previewBuyFromEth(buyEth);
+        UmbrellaBondingCurve bond = UmbrellaBondingCurve(payable(curve));
+        uint256 hi = bond.previewBuyFromEth(buyEth);
+        if (hi == 0) {
+            (bool ok, ) = payable(msg.sender).call{ value: buyEth }("");
+            if (!ok) revert EthRefundFailed();
+            return;
+        }
+        // `previewBuyFromEth` is approximate; `buyTo` requires quoteBuy(tokensOut) <= msg.value.
+        // Without this, integer rounding can make ethGross one wei over buyEth and revert the
+        // entire createCurveWithPermit tx (common with small creator-snipe amounts).
+        (, uint256 ethHi) = bond.quoteBuy(hi);
+        uint256 tokensOut = hi;
+        if (ethHi > buyEth) {
+            uint256 lo = 0;
+            uint256 hiBound = hi;
+            while (lo < hiBound) {
+                uint256 mid = (lo + hiBound + 1) / 2;
+                (, uint256 ethGross) = bond.quoteBuy(mid);
+                if (ethGross <= buyEth) lo = mid;
+                else hiBound = mid - 1;
+            }
+            tokensOut = lo;
+        }
         if (tokensOut == 0) {
             (bool ok, ) = payable(msg.sender).call{ value: buyEth }("");
             if (!ok) revert EthRefundFailed();
             return;
         }
-        UmbrellaBondingCurve(payable(curve)).buyTo{ value: buyEth }(recipient, tokensOut, buyEth);
+        bond.buyTo{ value: buyEth }(recipient, tokensOut, buyEth);
     }
 }

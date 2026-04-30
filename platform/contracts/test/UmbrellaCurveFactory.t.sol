@@ -80,6 +80,41 @@ contract UmbrellaCurveFactoryTest is Test {
         assertEq(factory.curveFor(address(token)), curveAddr);
     }
 
+    /// @dev Regression: creator snipe forwards ETH; preview/quote rounding must not revert the factory tx.
+    function test_createCurveWithPermit_creatorSnipeEth() public {
+        PermitToken token = new PermitToken(creator, SUPPLY);
+        address relayer = makeAddr("relayer");
+
+        uint256 nonce = token.nonces(creator);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes32 permitHash = keccak256(
+            abi.encode(
+                keccak256(
+                    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                ),
+                creator,
+                address(factory),
+                SUPPLY,
+                nonce,
+                deadline
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), permitHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(creatorKey, digest);
+
+        uint256 snipe = 0.01 ether;
+        vm.deal(relayer, snipe);
+        vm.prank(relayer);
+        address curveAddr = factory.createCurveWithPermit{ value: snipe }(
+            address(token), creator, hookAddr, SUPPLY, deadline, v, r, s
+        );
+
+        assertEq(factory.curveFor(address(token)), curveAddr);
+        UmbrellaBondingCurve curve = UmbrellaBondingCurve(payable(curveAddr));
+        assertGt(curve.tokensSold(), 0, "snipe should move tokensSold");
+        assertGt(curve.ethReserve(), 0, "snipe should seed curve ETH reserve");
+    }
+
     function test_createCurve_rejectsDuplicate() public {
         PermitToken token = new PermitToken(creator, SUPPLY);
         vm.prank(creator);
