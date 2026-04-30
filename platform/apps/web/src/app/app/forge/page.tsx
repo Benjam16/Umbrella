@@ -9,7 +9,7 @@ import {
   useWalletClient,
 } from "wagmi";
 import { base, baseSepolia } from "viem/chains";
-import { createPublicClient, decodeEventLog, http, type Address, type Chain, type Hex } from "viem";
+import { createPublicClient, http, type Address, type Chain, type Hex } from "viem";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { LaunchStatusPanel } from "@/components/forge/LaunchStatusPanel";
@@ -212,10 +212,11 @@ function ForgeView() {
         initialSupply,
       });
 
-      const tokenAddress = await extractTokenAddressFromReceipt({
+      const tokenAddress = await resolveDeployedTokenAddress({
         chainId: quote.chainId,
         txHash: factoryTxHash,
         factoryAddress: quote.factoryAddress,
+        blueprintId,
       });
 
       const permit = await signPermit({
@@ -475,32 +476,39 @@ async function submitFactoryTx(args: {
   return txHash;
 }
 
-async function extractTokenAddressFromReceipt(args: {
+function makeLaunchPublicClient(chainId: number) {
+  const chain = chainId === 8453 ? base : chainId === 84532 ? baseSepolia : null;
+  if (!chain) throw new Error(`unsupported launch chain ${chainId}`);
+  const rpcUrl = chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
+  return createPublicClient({ chain, transport: http(rpcUrl) });
+}
+
+/**
+ * Prefer `tokenFor(blueprintId)` over log decoding: `string indexed` in
+ * `AgentTokenCreated` can decode to the wrong `token` topic mapping in some
+ * clients, leading to reads against a non-contract and empty `nonces` data.
+ */
+async function resolveDeployedTokenAddress(args: {
   chainId: number;
   txHash: Hex;
   factoryAddress: Address;
+  blueprintId: string;
 }): Promise<Address> {
-  const rpcUrl = args.chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
-  const pub = createPublicClient({ transport: http(rpcUrl) });
+  const pub = makeLaunchPublicClient(args.chainId);
   const receipt = await pub.waitForTransactionReceipt({ hash: args.txHash });
   if (receipt.status !== "success") throw new Error("factory tx reverted on-chain");
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== args.factoryAddress.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({
-        abi: agentTokenFactoryAbi,
-        data: log.data,
-        topics: log.topics,
-      });
-      if (decoded.eventName === "AgentTokenCreated") {
-        const a = decoded.args as { token: Address };
-        return a.token;
-      }
-    } catch {
-      // unrelated log; continue
-    }
+  const token = (await pub.readContract({
+    address: args.factoryAddress,
+    abi: agentTokenFactoryAbi,
+    functionName: "tokenFor",
+    args: [args.blueprintId],
+  })) as Address;
+  if (!token || token.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+    throw new Error(
+      "Factory did not register a token for this blueprint. Confirm the deployment transaction succeeded.",
+    );
   }
-  throw new Error("AgentTokenCreated event not found in factory tx receipt");
+  return token;
 }
 
 async function signPermit(args: {
@@ -511,8 +519,13 @@ async function signPermit(args: {
   spender: Address;
   value: bigint;
 }): Promise<{ deadline: string; v: number; r: Hex; s: Hex }> {
-  const rpcUrl = args.chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
-  const pub = createPublicClient({ transport: http(rpcUrl) });
+  const pub = makeLaunchPublicClient(args.chainId);
+  const code = await pub.getBytecode({ address: args.tokenAddress });
+  if (!code || code === "0x") {
+    throw new Error(
+      `No contract code at ${args.tokenAddress} on chain ${args.chainId}. Check the deployment network and try again.`,
+    );
+  }
   const [rawName, nonce] = await Promise.all([
     pub.readContract({ address: args.tokenAddress, abi: erc20PermitAbi, functionName: "name" }),
     pub.readContract({
