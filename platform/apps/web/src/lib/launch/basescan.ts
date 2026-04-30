@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
 /**
@@ -9,8 +9,10 @@ import { join } from "path";
  * `action=checkverifystatus` until the response flips from "Pending in queue"
  * to "Pass - Verified".
  *
- * We keep this client dependency-free — it's just fetch + URLSearchParams —
- * so it works from both Next.js route handlers and background tasks.
+ * Verification uses `solidity-standard-json-input` so compiler metadata
+ * (notably `metadata.bytecodeHash = ipfs` from Foundry) matches what was
+ * deployed. Single-file verify recompiles with different metadata and fails
+ * with "runtime bytecode does NOT match" even when source is correct.
  */
 
 export type VerifySubmission = {
@@ -34,7 +36,6 @@ export type VerifyStatus =
   | { state: "failed"; guid?: string; message: string };
 
 function baseUrlForChain(chainId: number): string {
-  // Etherscan v2 multichain endpoint handles both networks.
   if (chainId === 8453 || chainId === 84532) {
     return "https://api.etherscan.io/v2/api";
   }
@@ -65,22 +66,152 @@ function readLocalSource(relPath: string): string {
 }
 
 const VERIFY_COMPILER = "v0.8.26+commit.8a97fa7a";
-const VERIFY_RUNS = "20000";
-/** Must match forge metadata settings.evmVersion (solc 0.8.26 here uses cancun). Etherscan v2 rejects evmversion=default with "Invalid EVM version entered". */
+const VERIFY_RUNS = 20_000;
+
 function verifyEvmVersion(): string {
   return (process.env.UMBRELLA_VERIFY_EVM_VERSION?.trim() || "cancun").toLowerCase();
 }
 
-/**
- * `solidity-single-file` submission. Mission record is a self-contained
- * `.sol` file. Bonding curve uses a checked-in `forge flatten` output so
- * dependencies are inlined (see `verify/UmbrellaBondingCurve.flattened.sol`).
- */
-async function postVerifySourceCodeSingleFile(args: {
+/** Forge `foundry.toml` + solc metadata for UmbrellaAgentMissionRecord (no imports). */
+function buildMissionRecordStandardJsonInput(): Record<string, unknown> {
+  const content = readLocalSource("src/UmbrellaAgentMissionRecord.sol");
+  return {
+    language: "Solidity",
+    sources: {
+      "src/UmbrellaAgentMissionRecord.sol": { content },
+    },
+    settings: {
+      remappings: [],
+      optimizer: { enabled: true, runs: VERIFY_RUNS },
+      metadata: { useLiteralContent: false, bytecodeHash: "ipfs", appendCBOR: true },
+      outputSelection: {
+        "*": {
+          "*": ["abi", "evm.bytecode", "evm.deployedBytecode", "metadata"],
+        },
+      },
+      evmVersion: verifyEvmVersion(),
+      viaIR: false,
+      libraries: {},
+      compilationTarget: {
+        "src/UmbrellaAgentMissionRecord.sol": "UmbrellaAgentMissionRecord",
+      },
+    },
+  };
+}
+
+function contractOutRoots(): string[] {
+  return [
+    process.env.UMBRELLA_CONTRACTS_OUT_DIR?.trim(),
+    join(process.cwd(), "../../contracts/out"),
+    join(process.cwd(), "../../../contracts/out"),
+    join(process.cwd(), "platform/contracts/out"),
+  ].filter((v): v is string => !!v);
+}
+
+function tryLoadBondingCurveVerifyFromBuildInfo(): Record<string, unknown> | null {
+  for (const root of contractOutRoots()) {
+    const dir = join(root, "build-info");
+    let names: string[];
+    try {
+      names = readdirSync(dir).filter((f) => f.endsWith(".json"));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      try {
+        const j = JSON.parse(readFileSync(join(dir, name), "utf-8")) as {
+          input?: { language?: string; sources?: Record<string, { content?: string }>; settings?: Record<string, unknown> };
+          output?: { contracts?: Record<string, { UmbrellaBondingCurve?: unknown }> };
+        };
+        if (!j.input?.sources || !j.output?.contracts?.["src/UmbrellaBondingCurve.sol"]?.UmbrellaBondingCurve) {
+          continue;
+        }
+        return {
+          language: j.input.language ?? "Solidity",
+          sources: j.input.sources,
+          settings: {
+            ...j.input.settings,
+            compilationTarget: { "src/UmbrellaBondingCurve.sol": "UmbrellaBondingCurve" },
+            outputSelection: {
+              "*": { "*": ["abi", "evm.bytecode", "evm.deployedBytecode", "metadata"] },
+            },
+          },
+        };
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+  return null;
+}
+
+/** Checked-in snapshot from `forge build` (regenerate after curve source changes). */
+function tryLoadEmbeddedBondingCurveVerifyJson(): Record<string, unknown> | null {
+  const candidates = [
+    join(process.cwd(), "src/lib/launch/embedded/UmbrellaBondingCurve-verify-standard-input.json"),
+    join(process.cwd(), "platform/apps/web/src/lib/launch/embedded/UmbrellaBondingCurve-verify-standard-input.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      return JSON.parse(readFileSync(p, "utf-8")) as Record<string, unknown>;
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+function normalizeBondingCurveVerifyInput(raw: Record<string, unknown>): Record<string, unknown> {
+  const asBuildInfo = raw as {
+    input?: { language?: string; sources?: Record<string, { content?: string }>; settings?: Record<string, unknown> };
+    output?: { contracts?: Record<string, { UmbrellaBondingCurve?: unknown }> };
+  };
+  if (asBuildInfo.input?.sources && asBuildInfo.output?.contracts?.["src/UmbrellaBondingCurve.sol"]?.UmbrellaBondingCurve) {
+    return {
+      language: asBuildInfo.input.language ?? "Solidity",
+      sources: asBuildInfo.input.sources,
+      settings: {
+        ...asBuildInfo.input.settings,
+        compilationTarget: { "src/UmbrellaBondingCurve.sol": "UmbrellaBondingCurve" },
+        outputSelection: {
+          "*": { "*": ["abi", "evm.bytecode", "evm.deployedBytecode", "metadata"] },
+        },
+      },
+    };
+  }
+  return raw;
+}
+
+function loadBondingCurveStandardJsonInput(): Record<string, unknown> {
+  const envPath = process.env.UMBRELLA_BONDING_CURVE_VERIFY_STANDARD_JSON?.trim();
+  if (envPath) {
+    try {
+      return normalizeBondingCurveVerifyInput(
+        JSON.parse(readFileSync(envPath, "utf-8")) as Record<string, unknown>,
+      );
+    } catch (err) {
+      throw new Error(
+        `UMBRELLA_BONDING_CURVE_VERIFY_STANDARD_JSON unreadable: ${envPath}. ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+  const fromBuild = tryLoadBondingCurveVerifyFromBuildInfo();
+  if (fromBuild) return fromBuild;
+  const embedded = tryLoadEmbeddedBondingCurveVerifyJson();
+  if (embedded) return embedded;
+  throw new Error(
+    "Bonding curve verify input missing: run `forge build` in platform/contracts (so out/build-info contains UmbrellaBondingCurve) or ship embedded UmbrellaBondingCurve-verify-standard-input.json",
+  );
+}
+
+async function postVerifyStandardJson(args: {
   chainId: number;
   address: string;
-  sourceCode: string;
-  contractName: string;
+  /** e.g. `src/UmbrellaBondingCurve.sol:UmbrellaBondingCurve` */
+  contractPathAndName: string;
+  standardJsonInput: Record<string, unknown>;
   constructorArgsHex: string;
 }): Promise<VerifyStatus> {
   const key = apiKey();
@@ -88,21 +219,16 @@ async function postVerifySourceCodeSingleFile(args: {
 
   const body = new URLSearchParams();
   body.set("apikey", key);
-  // V2 reads `chainid` from the URL query string; form body alone returns
-  // "Missing or unsupported chainid parameter (required for v2 api)".
   body.set("chainid", String(args.chainId));
   body.set("module", "contract");
   body.set("action", "verifysourcecode");
   body.set("contractaddress", args.address);
-  body.set("sourceCode", args.sourceCode);
-  body.set("codeformat", "solidity-single-file");
-  body.set("contractname", args.contractName);
+  body.set("sourceCode", JSON.stringify(args.standardJsonInput));
+  body.set("codeformat", "solidity-standard-json-input");
+  body.set("contractname", args.contractPathAndName);
   body.set("compilerversion", VERIFY_COMPILER);
-  body.set("optimizationUsed", "1");
-  body.set("runs", VERIFY_RUNS);
-  body.set("evmversion", verifyEvmVersion());
-  body.set("constructorArguements", args.constructorArgsHex); // Etherscan typo preserved
-  body.set("licenseType", "3"); // MIT
+  body.set("constructorArguements", args.constructorArgsHex);
+  body.set("licenseType", "3");
 
   const submitUrl = new URL(baseUrlForChain(args.chainId));
   submitUrl.searchParams.set("chainid", String(args.chainId));
@@ -137,12 +263,11 @@ export async function submitVerifyMissionRecord(args: {
   address: string;
   constructorArgsHex: string;
 }): Promise<VerifyStatus> {
-  const sourceCode = readLocalSource("src/UmbrellaAgentMissionRecord.sol");
-  return postVerifySourceCodeSingleFile({
+  return postVerifyStandardJson({
     chainId: args.chainId,
     address: args.address,
-    sourceCode,
-    contractName: "UmbrellaAgentMissionRecord",
+    contractPathAndName: "src/UmbrellaAgentMissionRecord.sol:UmbrellaAgentMissionRecord",
+    standardJsonInput: buildMissionRecordStandardJsonInput(),
     constructorArgsHex: args.constructorArgsHex,
   });
 }
@@ -152,12 +277,11 @@ export async function submitVerifyBondingCurve(args: {
   address: string;
   constructorArgsHex: string;
 }): Promise<VerifyStatus> {
-  const sourceCode = readLocalSource("verify/UmbrellaBondingCurve.flattened.sol");
-  return postVerifySourceCodeSingleFile({
+  return postVerifyStandardJson({
     chainId: args.chainId,
     address: args.address,
-    sourceCode,
-    contractName: "UmbrellaBondingCurve",
+    contractPathAndName: "src/UmbrellaBondingCurve.sol:UmbrellaBondingCurve",
+    standardJsonInput: loadBondingCurveStandardJsonInput(),
     constructorArgsHex: args.constructorArgsHex,
   });
 }
