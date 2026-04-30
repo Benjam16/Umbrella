@@ -84,6 +84,8 @@ async function postVerifySourceCodeSingleFile(args: {
 
   const body = new URLSearchParams();
   body.set("apikey", key);
+  // V2 reads `chainid` from the URL query string; form body alone returns
+  // "Missing or unsupported chainid parameter (required for v2 api)".
   body.set("chainid", String(args.chainId));
   body.set("module", "contract");
   body.set("action", "verifysourcecode");
@@ -98,9 +100,12 @@ async function postVerifySourceCodeSingleFile(args: {
   body.set("constructorArguements", args.constructorArgsHex); // Etherscan typo preserved
   body.set("licenseType", "3"); // MIT
 
+  const submitUrl = new URL(baseUrlForChain(args.chainId));
+  submitUrl.searchParams.set("chainid", String(args.chainId));
+
   let res: Response;
   try {
-    res = await fetch(baseUrlForChain(args.chainId), { method: "POST", body });
+    res = await fetch(submitUrl.toString(), { method: "POST", body });
   } catch (err) {
     return {
       state: "failed",
