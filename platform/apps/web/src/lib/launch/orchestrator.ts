@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { keccak256, toBytes, type Address, type Hex } from "viem";
 
 import { generateHookWithKimi, insertGeneratedHook } from "@/lib/forge-hooks";
@@ -34,8 +35,10 @@ contract UmbrellaForgeHookPending {
  *   3. deploy_mission_record — server deploys the per-agent record contract
  *   4. create_curve         — server relays ERC-2612 permit to curve factory
  *   5. mark_active          — flip curve_stage='active' on generated_hooks row
- *   6. verify_basescan / verify_curve_basescan — fire-and-forget Basescan verification
- *      (mission record + bonding curve; both async after HTTP returns)
+ *   6. verify_basescan / verify_curve_basescan — Basescan verification for mission + curve.
+ *      Scheduled with `after()` so the host keeps running until polls finish (floating
+ *      promises were killed on Vercel right after the JSON response, leaving steps stuck
+ *      on "running" forever in `launch_jobs`).
  */
 
 export type OrchestratorInput = {
@@ -252,43 +255,49 @@ export async function runLaunch(input: OrchestratorInput): Promise<OrchestratorR
     status: "completed",
   });
 
-  // Step 6 — Basescan verify (mission + curve), fire-and-forget in parallel.
-  void runBasescanVerifyJob({
-    hookId: hookRow.id,
-    chainId: input.chainId,
-    step: "verify_basescan",
-    submit: async () =>
-      submitVerifyMissionRecord({
+  // Step 6 — Basescan verify (mission + curve). Must not be bare floating promises on
+  // serverless: the runtime often freezes as soon as the route responds.
+  after(async () => {
+    await Promise.all([
+      runBasescanVerifyJob({
+        hookId: hookRow.id,
         chainId: input.chainId,
-        address: missionRecord.address,
-        constructorArgsHex: encodeMissionRecordConstructorArgs({
-          creator: input.walletAddress,
-          token: tokenAddress,
-          missionCodeHash: missionRecord.missionCodeHash,
-          metadataURI: `supabase://generated_hooks/${hookRow.id}`,
-          missionLabel: `${input.identity.name} · ${input.identity.symbol}`,
-        }),
+        step: "verify_basescan",
+        submit: async () =>
+          submitVerifyMissionRecord({
+            chainId: input.chainId,
+            address: missionRecord.address,
+            constructorArgsHex: encodeMissionRecordConstructorArgs({
+              creator: input.walletAddress,
+              token: tokenAddress,
+              missionCodeHash: missionRecord.missionCodeHash,
+              metadataURI: `supabase://generated_hooks/${hookRow.id}`,
+              missionLabel: `${input.identity.name} · ${input.identity.symbol}`,
+            }),
+          }),
+        onPollSubmitted: (guid) => updateHookRow(hookRow.id, { verify_guid: guid }),
+        onVerified: () => updateHookRow(hookRow.id, { verified_at: new Date().toISOString() }),
       }),
-    onPollSubmitted: (guid) => updateHookRow(hookRow.id, { verify_guid: guid }),
-    onVerified: () => updateHookRow(hookRow.id, { verified_at: new Date().toISOString() }),
-  });
-  void runBasescanVerifyJob({
-    hookId: hookRow.id,
-    chainId: input.chainId,
-    step: "verify_curve_basescan",
-    submit: async () => {
-      const constructorArgsHex = await encodeBondingCurveConstructorArgsFromChain({
+      runBasescanVerifyJob({
+        hookId: hookRow.id,
         chainId: input.chainId,
-        curveAddress: curve.curveAddress,
-      });
-      return submitVerifyBondingCurve({
-        chainId: input.chainId,
-        address: curve.curveAddress,
-        constructorArgsHex,
-      });
-    },
-    onPollSubmitted: async () => {},
-    onVerified: () => updateHookRow(hookRow.id, { curve_verified_at: new Date().toISOString() }),
+        step: "verify_curve_basescan",
+        submit: async () => {
+          const constructorArgsHex = await encodeBondingCurveConstructorArgsFromChain({
+            chainId: input.chainId,
+            curveAddress: curve.curveAddress,
+          });
+          return submitVerifyBondingCurve({
+            chainId: input.chainId,
+            address: curve.curveAddress,
+            constructorArgsHex,
+          });
+        },
+        onPollSubmitted: async () => {},
+        onVerified: () =>
+          updateHookRow(hookRow.id, { curve_verified_at: new Date().toISOString() }),
+      }),
+    ]);
   });
 
   return {

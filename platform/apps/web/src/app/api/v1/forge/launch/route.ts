@@ -27,8 +27,8 @@ export const maxDuration = 300;
  *   E. Fires a Basescan verify in the background
  *
  * Returns once step (D) has confirmed so the client has a fully-tradable curve
- * address. Basescan verification continues in a background promise; the UI
- * polls `/launch/status/[hookId]` for step-by-step progress.
+ * address. Basescan verification is scheduled with Next `after()` so it keeps
+ * running after the JSON response on Vercel; the UI polls `/launch/status/[hookId]`.
  */
 
 type LaunchBody = {
