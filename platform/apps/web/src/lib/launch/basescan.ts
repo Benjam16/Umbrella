@@ -66,6 +66,10 @@ function readLocalSource(relPath: string): string {
 
 const VERIFY_COMPILER = "v0.8.26+commit.8a97fa7a";
 const VERIFY_RUNS = "20000";
+/** Must match forge metadata settings.evmVersion (solc 0.8.26 here uses cancun). Etherscan v2 rejects evmversion=default with "Invalid EVM version entered". */
+function verifyEvmVersion(): string {
+  return (process.env.UMBRELLA_VERIFY_EVM_VERSION?.trim() || "cancun").toLowerCase();
+}
 
 /**
  * `solidity-single-file` submission. Mission record is a self-contained
@@ -96,7 +100,7 @@ async function postVerifySourceCodeSingleFile(args: {
   body.set("compilerversion", VERIFY_COMPILER);
   body.set("optimizationUsed", "1");
   body.set("runs", VERIFY_RUNS);
-  body.set("evmversion", "default");
+  body.set("evmversion", verifyEvmVersion());
   body.set("constructorArguements", args.constructorArgsHex); // Etherscan typo preserved
   body.set("licenseType", "3"); // MIT
 
