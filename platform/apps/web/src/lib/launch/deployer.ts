@@ -108,6 +108,47 @@ async function buildClients(chainId?: number): Promise<Clients> {
   return { publicClient, walletClient, config, deployer: account.address };
 }
 
+/** Alchemy often wraps the real reason; still match the explicit substring when present. */
+function isRetriableDeployerFeeError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("replacement transaction underpriced") ||
+    msg.includes("replacement fee too low") ||
+    msg.includes("max fee per gas less than block base fee")
+  );
+}
+
+async function scaledEip1559Fees(
+  publicClient: PublicClient,
+  multiplierBps: bigint,
+): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | null> {
+  const fees = await publicClient.estimateFeesPerGas();
+  if (!fees.maxFeePerGas || !fees.maxPriorityFeePerGas) return null;
+  return {
+    maxFeePerGas: (fees.maxFeePerGas * multiplierBps) / 10000n,
+    maxPriorityFeePerGas: (fees.maxPriorityFeePerGas * multiplierBps) / 10000n,
+  };
+}
+
+/**
+ * Re-broadcasts often hit "replacement transaction underpriced" when the deployer
+ * nonce is still pending. EIP-1559 requires higher max fees than the stuck tx.
+ */
+async function runDeployerWriteWithFeeRetries<T>(run: (feeScaleBps: bigint) => Promise<T>): Promise<T> {
+  const scales = [13500n, 20000n, 30000n] as const;
+  let last: unknown;
+  for (let i = 0; i < scales.length; i++) {
+    try {
+      return await run(scales[i]!);
+    } catch (err) {
+      last = err;
+      if (!isRetriableDeployerFeeError(err) || i === scales.length - 1) throw err;
+      await new Promise((r) => setTimeout(r, 1600 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 export type DeployMissionArgs = {
   chainId?: number;
   creator: Address;
@@ -135,12 +176,16 @@ export async function deployMissionRecord(args: DeployMissionArgs): Promise<Miss
 
   let hash: Hex;
   try {
-    hash = await walletClient.deployContract({
-      abi: artifact.abi,
-      bytecode: artifact.bytecode.object,
-      account: walletClient.account!,
-      chain: walletClient.chain,
-      args: [args.creator, args.token, missionCodeHash, args.metadataURI, args.missionLabel],
+    hash = await runDeployerWriteWithFeeRetries(async (feeScaleBps) => {
+      const gas = await scaledEip1559Fees(publicClient, feeScaleBps);
+      return walletClient.deployContract({
+        abi: artifact.abi,
+        bytecode: artifact.bytecode.object,
+        account: walletClient.account!,
+        chain: walletClient.chain,
+        args: [args.creator, args.token, missionCodeHash, args.metadataURI, args.missionLabel],
+        ...(gas ?? {}),
+      });
     });
   } catch (err) {
     throw new LaunchDeployerError(
@@ -198,24 +243,31 @@ export async function createCurveForToken(args: CreateCurveArgs): Promise<Create
 
   let hash: Hex;
   try {
-    const { request } = await publicClient.simulateContract({
-      account: walletClient.account!,
-      address: config.curveFactory,
-      abi: curveFactoryAbi,
-      functionName: "createCurveWithPermit",
-      args: [
-        args.tokenAddress,
-        args.creator,
-        args.hookAddress,
-        args.tokensSeed,
-        args.permit.deadline,
-        args.permit.v,
-        args.permit.r,
-        args.permit.s,
-      ],
-      value,
+    hash = await runDeployerWriteWithFeeRetries(async (feeScaleBps) => {
+      const { request } = await publicClient.simulateContract({
+        account: walletClient.account!,
+        address: config.curveFactory,
+        abi: curveFactoryAbi,
+        functionName: "createCurveWithPermit",
+        args: [
+          args.tokenAddress,
+          args.creator,
+          args.hookAddress,
+          args.tokensSeed,
+          args.permit.deadline,
+          args.permit.v,
+          args.permit.r,
+          args.permit.s,
+        ],
+        value,
+      });
+      const gas = await scaledEip1559Fees(publicClient, feeScaleBps);
+      return walletClient.writeContract({
+        ...request,
+        value,
+        ...(gas ?? {}),
+      } as unknown as Parameters<WalletClient["writeContract"]>[0]);
     });
-    hash = await walletClient.writeContract({ ...request, value });
   } catch (err) {
     throw new LaunchDeployerError(
       "deployCurve",
