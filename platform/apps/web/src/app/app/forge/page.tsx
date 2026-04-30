@@ -9,7 +9,15 @@ import {
   useWalletClient,
 } from "wagmi";
 import { base, baseSepolia } from "viem/chains";
-import { createPublicClient, http, type Address, type Chain, type Hex } from "viem";
+import {
+  createPublicClient,
+  getAddress,
+  http,
+  type Address,
+  type Chain,
+  type Hex,
+  type TransactionReceipt,
+} from "viem";
 import { AppTopBar } from "@/components/app/AppTopBar";
 import { TokenLaunchWizard, type WizardResult } from "@/components/app/TokenLaunchWizard";
 import { LaunchStatusPanel } from "@/components/forge/LaunchStatusPanel";
@@ -484,10 +492,40 @@ function makeLaunchPublicClient(chainId: number) {
   return createPublicClient({ chain, transport: http(rpcUrl) });
 }
 
+/** `keccak256("AgentTokenCreated(string,string,address,address,string,string,address,uint256)")` */
+const AGENT_TOKEN_CREATED_TOPIC0: Hex =
+  "0x61cc4624b69361f722b5d59e1976eb7d8133000b462b6622a1cebab6a02ca736";
+
 /**
- * Prefer `tokenFor(blueprintId)` over log decoding: `string indexed` in
- * `AgentTokenCreated` can decode to the wrong `token` topic mapping in some
- * clients, leading to reads against a non-contract and empty `nonces` data.
+ * Read the indexed `token` topic without ABI-decoding the event body. Full
+ * `decodeEventLog` can mis-map fields when `string indexed` is involved; the
+ * second indexed topic is always the token address for this factory event.
+ */
+function parseAgentTokenAddressFromFactoryLogs(
+  receipt: TransactionReceipt,
+  factoryAddress: Address,
+): Address | null {
+  const want = factoryAddress.toLowerCase();
+  let last: Address | null = null;
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== want) continue;
+    if (log.topics[0] !== AGENT_TOKEN_CREATED_TOPIC0) continue;
+    const tokenTopic = log.topics[2];
+    if (!tokenTopic || tokenTopic.length < 66) continue;
+    try {
+      last = getAddress(`0x${tokenTopic.slice(-40)}` as Hex);
+    } catch {
+      // malformed topic; keep scanning
+    }
+  }
+  return last;
+}
+
+/**
+ * Resolve the new AgentToken: prefer `tokenFor(blueprintId)` (with short
+ * retries for RPC lag), then fall back to the `AgentTokenCreated` indexed
+ * `token` topic so we never depend on fragile log body decoding for the
+ * address used in permit reads.
  */
 async function resolveDeployedTokenAddress(args: {
   chainId: number;
@@ -498,12 +536,36 @@ async function resolveDeployedTokenAddress(args: {
   const pub = makeLaunchPublicClient(args.chainId);
   const receipt = await pub.waitForTransactionReceipt({ hash: args.txHash });
   if (receipt.status !== "success") throw new Error("factory tx reverted on-chain");
-  const token = (await pub.readContract({
-    address: args.factoryAddress,
-    abi: agentTokenFactoryAbi,
-    functionName: "tokenFor",
-    args: [args.blueprintId],
-  })) as Address;
+
+  const receiptTo = receipt.to;
+  if (
+    receiptTo &&
+    receiptTo.toLowerCase() !== args.factoryAddress.toLowerCase()
+  ) {
+    throw new Error(
+      `This transaction called ${receiptTo} but the launch quote expects factory ${args.factoryAddress}. Reload the page and confirm you are on the quoted network, then retry.`,
+    );
+  }
+
+  let token: Address | null = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const read = (await pub.readContract({
+      address: args.factoryAddress,
+      abi: agentTokenFactoryAbi,
+      functionName: "tokenFor",
+      args: [args.blueprintId],
+    })) as Address;
+    if (read && read.toLowerCase() !== "0x0000000000000000000000000000000000000000") {
+      token = read;
+      break;
+    }
+    if (attempt < 5) await new Promise((r) => setTimeout(r, 400));
+  }
+
+  if (!token) {
+    token = parseAgentTokenAddressFromFactoryLogs(receipt, args.factoryAddress);
+  }
+
   if (!token || token.toLowerCase() === "0x0000000000000000000000000000000000000000") {
     throw new Error(
       "Factory did not register a token for this blueprint. Confirm the deployment transaction succeeded.",
