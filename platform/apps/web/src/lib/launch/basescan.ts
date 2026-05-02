@@ -227,6 +227,13 @@ async function postVerifyStandardJson(args: {
   body.set("codeformat", "solidity-standard-json-input");
   body.set("contractname", args.contractPathAndName);
   body.set("compilerversion", VERIFY_COMPILER);
+  // Etherscan marks these as required on verifysourcecode; omitting them can
+  // make the backend compile with different optimizer defaults than the JSON
+  // (even for solidity-standard-json-input), yielding "deployment bytecode
+  // does NOT match the transaction" for otherwise-correct sources.
+  body.set("optimizationUsed", "1");
+  body.set("runs", String(VERIFY_RUNS));
+  body.set("evmversion", verifyEvmVersion());
   body.set("constructorArguements", args.constructorArgsHex);
   body.set("licenseType", "3");
 
